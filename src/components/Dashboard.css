@@ -1,0 +1,249 @@
+/* Dashboard Layout */
+.dashboard-container {
+    display: flex;
+    flex-direction: column;
+    gap: 32px;
+}
+
+.page-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.header-title h1 {
+    margin-bottom: 4px;
+}
+
+.subtitle {
+    color: hsl(var(--color-text-secondary));
+    font-size: 1.125rem;
+}
+
+.header-actions {
+    display: flex;
+    gap: 16px;
+}
+
+/* Actions */
+.btn-primary {
+    background-color: hsl(var(--color-primary));
+    color: white;
+    padding: 10px 20px;
+    border-radius: var(--radius-sm);
+    font-weight: 500;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    transition: background-color 0.2s;
+}
+
+.btn-primary:hover {
+    background-color: hsl(var(--color-primary-dark));
+}
+
+.filter-wrapper {
+    background: white;
+    border: 1px solid hsl(var(--color-border));
+    padding: 8px 16px;
+    border-radius: var(--radius-sm);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: hsl(var(--color-text-secondary));
+}
+
+.filter-select {
+    border: none;
+    outline: none;
+    font-family: inherit;
+    color: hsl(var(--color-text-main));
+    background: transparent;
+    cursor: pointer;
+}
+
+/* Grid System */
+.dashboard-grid {
+    display: grid;
+    grid-template-columns: 1fr 340px;
+    gap: 24px;
+    align-items: start;
+}
+
+/* Main Feed */
+.feed-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 20px;
+}
+
+.badge {
+    background-color: hsl(var(--color-primary-light));
+    color: hsl(var(--color-primary));
+    font-size: 0.75rem;
+    font-weight: 600;
+    padding: 4px 10px;
+    border-radius: 20px;
+}
+
+.shifts-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 16px;
+}
+
+/* Shift Card */
+.shift-card {
+    padding: 20px;
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.shift-card:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-md);
+}
+
+.shift-date {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background-color: hsl(var(--color-primary-light));
+    color: hsl(var(--color-primary));
+    width: 60px;
+    height: 60px;
+    border-radius: var(--radius-sm);
+    font-weight: 600;
+}
+
+.day-name {
+    font-size: 0.75rem;
+    text-transform: uppercase;
+}
+
+.date-num {
+    font-size: 1.5rem;
+    line-height: 1;
+}
+
+.shift-details {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.role-group {
+    display: flex;
+    flex-direction: column;
+}
+
+.label {
+    font-size: 0.75rem;
+    color: hsl(var(--color-text-secondary));
+    margin-bottom: 2px;
+}
+
+.value {
+    font-weight: 500;
+}
+
+/* Right Sidebar Panels */
+.right-sidebar {
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+}
+
+.panel-header {
+    padding: 16px 20px;
+    border-bottom: 1px solid hsl(var(--color-border));
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.employee-list {
+    padding: 8px 0;
+}
+
+.employee-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 20px;
+    border-bottom: 1px solid hsl(var(--color-border));
+}
+
+.employee-row:last-child {
+    border-bottom: none;
+}
+
+.employee-info {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.avatar {
+    width: 32px;
+    height: 32px;
+    background-color: hsl(var(--color-surface-subtle));
+    color: hsl(var(--color-text-secondary));
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.875rem;
+    font-weight: 600;
+}
+
+.name-role {
+    display: flex;
+    flex-direction: column;
+}
+
+.name {
+    font-weight: 500;
+    font-size: 0.875rem;
+}
+
+.role {
+    font-size: 0.75rem;
+    color: hsl(var(--color-text-secondary));
+}
+
+.score-badge {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: hsl(var(--color-primary));
+}
+
+.rules-list {
+    list-style: none;
+    padding: 16px 20px;
+}
+
+.rule-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 12px;
+    font-size: 0.875rem;
+    color: hsl(var(--color-text-secondary));
+}
+
+.rule-item:last-child {
+    margin-bottom: 0;
+}
+
+.rule-item svg {
+    color: hsl(var(--color-success));
+}
+
+.rule-item.warning svg {
+    color: hsl(var(--color-warning));
+}
