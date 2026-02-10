@@ -2,8 +2,10 @@ import React, { useState, useMemo } from 'react';
 import {
   Calendar, User, Shield, Briefcase, ChevronLeft, ChevronRight,
   CheckCircle2, AlertCircle, Coins, Filter, LayoutDashboard,
-  Palmtree, Users, FileSpreadsheet, Flag, Info
+  Palmtree, Users, FileText, Flag, Info, X
 } from 'lucide-react';
+import jsPDF from 'jspdf';
+import 'jspdf-autotable';
 
 const App = () => {
   const [activeTab, setActiveTab] = useState('escala'); // abas: escala, ferias, feriados
@@ -18,24 +20,48 @@ const App = () => {
   const NOMES_MESES = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
 
   const servidores = [
-    { nome: "ANDRE LUIS", janOnly: false, ferias: [["2026-01-07", "2026-02-04"], ["2026-02-05", "2026-02-13"], ["2026-02-16", "2026-02-17"], ["2026-02-19", "2026-02-27"]] },
-    { nome: "CLÁUDIA MARIA", janOnly: true, ferias: [] },
-    { nome: "EMANUEL CORREA", janOnly: false, ferias: [] },
-    { nome: "JEFFERSON DONIZETI", janOnly: false, ferias: [["2026-01-12", "2026-01-12"], ["2026-07-20", "2026-07-31"]] },
+    {
+      nome: "ANDRE LUIS",
+      janOnly: false,
+      ferias: [["2026-01-07", "2026-02-04"], ["2026-02-05", "2026-02-13"], ["2026-02-19", "2026-02-27"]],
+      impedimentos: [["2026-02-16", "2026-02-17"]]
+    },
+    { nome: "CLÁUDIA MARIA", janOnly: true, ferias: [["2026-01-19", "2026-01-23"]], impedimentos: [] },
+    {
+      nome: "EMANUEL CORREA",
+      janOnly: false,
+      ferias: [["2026-03-10", "2026-03-31"], ["2026-04-06", "2026-04-09"]],
+      impedimentos: []
+    },
+    {
+      nome: "JEFFERSON DONIZETI",
+      janOnly: false,
+      ferias: [["2026-01-12", "2026-01-12"], ["2026-07-20", "2026-07-31"]],
+      impedimentos: []
+    },
     {
       nome: "JEFFERSON FARIA",
       janOnly: false,
       ferias: [
         ["2026-01-26", "2026-02-09"],
-        ["2026-02-14", "2026-02-14"],
-        ["2026-02-15", "2026-02-15"],
-        ["2026-05-01", "2026-05-01"],
+        ["2026-02-10", "2026-02-13"],
         ["2026-07-13", "2026-07-24"]
-      ]
+      ],
+      impedimentos: [["2026-02-15", "2026-02-15"], ["2026-05-01", "2026-05-01"]]
     },
-    { nome: "JOHNSON TEIXEIRA", janOnly: false, ferias: [] },
-    { nome: "MARCO AURELIO", janOnly: false, ferias: [["2026-10-26", "2026-10-30"], ["2026-11-03", "2026-11-19"], ["2026-11-23", "2026-11-30"]] },
-    { nome: "MARIA LUCIA", janOnly: false, ferias: [["2026-03-02", "2026-03-10"], ["2026-06-29", "2026-07-08"], ["2026-10-13", "2026-10-21"], ["2026-11-09", "2026-11-19"]] },
+    { nome: "JOHNSON TEIXEIRA", janOnly: false, ferias: [["2026-01-07", "2026-01-09"]], impedimentos: [] },
+    {
+      nome: "MARCO AURELIO",
+      janOnly: false,
+      ferias: [["2026-10-26", "2026-10-30"], ["2026-11-03", "2026-11-19"], ["2026-11-23", "2026-11-30"]],
+      impedimentos: []
+    },
+    {
+      nome: "MARIA LUCIA",
+      janOnly: false,
+      ferias: [["2026-03-02", "2026-03-10"], ["2026-06-29", "2026-07-08"], ["2026-10-13", "2026-10-21"], ["2026-11-09", "2026-11-19"]],
+      impedimentos: []
+    },
   ];
 
   // Plantões base estritamente conforme as imagens fornecidas
@@ -209,22 +235,21 @@ const App = () => {
     return escalaTotal.filter(p => p.servidor === servidorSelecionado);
   }, [escalaTotal, mesAtivo, servidorSelecionado]);
 
-  // --- DADOS DA PORTARIA STM 11682 + FERIADOS MUNICIPAIS/ESTADUAIS ---
-  // (Mantido igual)
+  // --- DADOS DA PORTARIA 2ª CJM Nº 1115 (SP) + PORTARIA STM 11682 (JMU) ---
+  // Baseado na Portaria do Foro da 2ª CJM considerando feriados municipais e estaduais de São Paulo
   const feriadosPortaria = {
     feriados: [
       { data: "01/01/2026", nome: "Ano Novo", tipo: "Nacional" },
-      { data: "25/01/2026", nome: "Aniversário de São Paulo", tipo: "Municipal" },
+      { data: "25/01/2026", nome: "Aniversário de São Paulo", tipo: "Municipal (Lei 14.485/07)" },
       { data: "16/02/2026", nome: "Feriado Judicial", tipo: "Judicial (Lei 5.010/66)" },
       { data: "17/02/2026", nome: "Feriado Judicial", tipo: "Judicial (Lei 5.010/66)" },
       { data: "01/04/2026", nome: "Feriado Judicial", tipo: "Judicial (Lei 5.010/66)" },
       { data: "02/04/2026", nome: "Feriado Judicial", tipo: "Judicial (Lei 5.010/66)" },
-      { data: "03/04/2026", nome: "Paixão de Cristo", tipo: "Judicial (Lei 5.010/66)" },
-      { data: "08/04/2026", nome: "Solenidade OMJM", tipo: "Judicial" },
+      { data: "03/04/2026", nome: "Paixão de Cristo*", tipo: "Judicial (Lei 5.010/66)" },
       { data: "21/04/2026", nome: "Tiradentes", tipo: "Nacional" },
       { data: "01/05/2026", nome: "Dia do Trabalho", tipo: "Nacional" },
       { data: "04/06/2026", nome: "Corpus Christi", tipo: "Municipal (Lei 14.485/07)" },
-      { data: "09/07/2026", nome: "Data Magna de São Paulo", tipo: "Estadual" },
+      { data: "09/07/2026", nome: "Data Magna de São Paulo", tipo: "Estadual (Lei 9.497/97)" },
       { data: "11/08/2026", nome: "Dia do Magistrado/Advogado", tipo: "Judicial (Lei 5.010/66)" },
       { data: "07/09/2026", nome: "Independência do Brasil", tipo: "Nacional" },
       { data: "12/10/2026", nome: "Nsa. Sra. Aparecida", tipo: "Nacional" },
@@ -234,13 +259,11 @@ const App = () => {
       { data: "25/12/2026", nome: "Natal", tipo: "Nacional" },
     ],
     pontosFacultativos: [
-      { data: "16/02/2026", nome: "Carnaval", obs: "Municipal e Estadual" },
-      { data: "17/02/2026", nome: "Carnaval", obs: "Municipal e Estadual" },
       { data: "18/02/2026", nome: "Quarta-Feira de Cinzas", obs: "Até às 14 horas" },
-      { data: "20/04/2026", nome: "Ponto Facultativo", obs: "Véspera Tiradentes" },
-      { data: "04/06/2026", nome: "Corpus Christi", obs: "Facultativo na JMU, Feriado em SP" },
-      { data: "05/06/2026", nome: "Ponto Facultativo", obs: "Pós Corpus Christi" },
-      { data: "10/08/2026", nome: "Ponto Facultativo", obs: "Véspera 11 Ago" },
+      { data: "20/04/2026", nome: "Ponto Facultativo", obs: "Portaria 2ª CJM 1115" },
+      { data: "05/06/2026", nome: "Ponto Facultativo", obs: "Portaria 2ª CJM 1115" },
+      { data: "10/07/2026", nome: "Ponto Facultativo", obs: "Portaria 2ª CJM 1115" },
+      { data: "10/08/2026", nome: "Ponto Facultativo", obs: "Portaria 2ª CJM 1115" },
       { data: "30/10/2026", nome: "Dia do Servidor Público", obs: "Transferido de 28/10" },
       { data: "07/12/2026", nome: "Ponto Facultativo", obs: "Véspera Dia da Justiça" },
     ],
@@ -251,20 +274,392 @@ const App = () => {
     ]
   };
 
-  const exportToExcel = () => {
-    let csvContent = "data:text/csv;charset=utf-8,";
-    csvContent += "Data;Descricao;Magistrado;Servidor;Pontos\n";
-    escalaTotal.forEach(p => {
-      const dataFormatada = p.data.split('-').reverse().join('/');
-      csvContent += `${dataFormatada};${p.desc};${p.juiz};${p.servidor};${p.pontos}\n`;
+  const exportToPDF = () => {
+    const doc = new jsPDF('p', 'mm', 'a4');
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
+    const margin = 15;
+    let y = 0;
+
+    const addPageIfNeeded = (needed = 30) => {
+      if (y + needed > pageHeight - 20) {
+        doc.addPage();
+        y = margin;
+        return true;
+      }
+      return false;
+    };
+
+    const drawFooter = (pageNum) => {
+      doc.setFontSize(7);
+      doc.setTextColor(150);
+      doc.text(`Escala de Plantão 2026 - 2ª CJM São Paulo | Gerado em ${new Date().toLocaleDateString('pt-BR')} às ${new Date().toLocaleTimeString('pt-BR')}`, margin, pageHeight - 8);
+      doc.text(`Página ${pageNum}`, pageWidth - margin, pageHeight - 8, { align: 'right' });
+    };
+
+    // ===== CAPA =====
+    doc.setFillColor(49, 46, 129); // indigo-900
+    doc.rect(0, 0, pageWidth, pageHeight, 'F');
+    doc.setFillColor(67, 56, 202); // indigo-700
+    doc.rect(0, 80, pageWidth, 80, 'F');
+
+    doc.setTextColor(255);
+    doc.setFontSize(12);
+    doc.text('JUSTIÇA MILITAR DA UNIÃO', pageWidth / 2, 50, { align: 'center' });
+    doc.setFontSize(10);
+    doc.text('2ª Circunscrição Judiciária Militar - São Paulo', pageWidth / 2, 58, { align: 'center' });
+
+    doc.setFontSize(28);
+    doc.setFont(undefined, 'bold');
+    doc.text('ESCALA DE PLANTÃO', pageWidth / 2, 110, { align: 'center' });
+    doc.setFontSize(40);
+    doc.text('2026', pageWidth / 2, 130, { align: 'center' });
+    doc.setFont(undefined, 'normal');
+
+    doc.setFontSize(10);
+    doc.text('Gestão Integrada de Plantões, Férias e Feriados', pageWidth / 2, 150, { align: 'center' });
+
+    doc.setFontSize(9);
+    doc.setTextColor(180, 180, 220);
+    doc.text('Portaria do Foro da 2ª CJM nº 1115', pageWidth / 2, 200, { align: 'center' });
+    doc.text('Portaria STM nº 11682 (JMU)', pageWidth / 2, 207, { align: 'center' });
+    doc.text(`Documento gerado em ${new Date().toLocaleDateString('pt-BR')}`, pageWidth / 2, 220, { align: 'center' });
+
+    let pageNum = 1;
+
+    // ===== PÁGINA 2: ESCALA DE PLANTÕES POR MÊS =====
+    doc.addPage();
+    pageNum++;
+    y = margin;
+
+    doc.setTextColor(30, 30, 80);
+    doc.setFontSize(16);
+    doc.setFont(undefined, 'bold');
+    doc.text('ESCALA DE PLANTÕES 2026', pageWidth / 2, y + 5, { align: 'center' });
+    y += 12;
+    doc.setFontSize(8);
+    doc.setFont(undefined, 'normal');
+    doc.setTextColor(100);
+    doc.text('Plantões de sábados, domingos e feriados com magistrado e servidor designados', pageWidth / 2, y, { align: 'center' });
+    y += 10;
+
+    const mesesNomes = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
+
+    mesesNomes.forEach((mesNome, mesIdx) => {
+      const plantoesMes = escalaTotal.filter(p => parseInt(p.data.split('-')[1]) === mesIdx + 1);
+      if (plantoesMes.length === 0) return;
+
+      addPageIfNeeded(40);
+
+      // Cabeçalho do mês
+      doc.setFillColor(49, 46, 129);
+      doc.roundedRect(margin, y, pageWidth - margin * 2, 8, 2, 2, 'F');
+      doc.setTextColor(255);
+      doc.setFontSize(10);
+      doc.setFont(undefined, 'bold');
+      doc.text(mesNome.toUpperCase(), margin + 4, y + 5.5);
+      y += 12;
+
+      // Tabela do mês
+      doc.autoTable({
+        startY: y,
+        margin: { left: margin, right: margin },
+        head: [['Data', 'Dia/Descrição', 'Magistrado', 'Servidor', 'Pts']],
+        body: plantoesMes.map(p => [
+          p.data.split('-').reverse().join('/'),
+          p.desc,
+          p.juiz,
+          p.servidor,
+          p.pontos.toString()
+        ]),
+        theme: 'grid',
+        headStyles: { fillColor: [99, 102, 241], textColor: 255, fontSize: 8, fontStyle: 'bold', halign: 'center' },
+        bodyStyles: { fontSize: 8, textColor: [50, 50, 50] },
+        columnStyles: {
+          0: { cellWidth: 25, halign: 'center' },
+          1: { cellWidth: 35 },
+          2: { cellWidth: 35 },
+          3: { cellWidth: 55 },
+          4: { cellWidth: 15, halign: 'center' }
+        },
+        alternateRowStyles: { fillColor: [245, 247, 255] },
+        didDrawPage: () => { drawFooter(pageNum); }
+      });
+      y = doc.lastAutoTable.finalY + 8;
     });
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement("a");
-    link.setAttribute("href", encodedUri);
-    link.setAttribute("download", "Escala_Plantao_2026.csv");
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    drawFooter(pageNum);
+
+    // ===== PÁGINA: RESUMO ESTATÍSTICO =====
+    doc.addPage();
+    pageNum++;
+    y = margin;
+
+    doc.setTextColor(30, 30, 80);
+    doc.setFontSize(16);
+    doc.setFont(undefined, 'bold');
+    doc.text('RESUMO ESTATÍSTICO POR SERVIDOR', pageWidth / 2, y + 5, { align: 'center' });
+    y += 12;
+    doc.setFontSize(8);
+    doc.setFont(undefined, 'normal');
+    doc.setTextColor(100);
+    doc.text('Distribuição de plantões, pontuação acumulada e valores por servidor', pageWidth / 2, y, { align: 'center' });
+    y += 10;
+
+    const statsBody = Object.entries(statsGlobais)
+      .sort((a, b) => b[1].pontos - a[1].pontos)
+      .map(([nome, stats]) => [
+        nome,
+        stats.dias.toString(),
+        stats.pontos.toString(),
+        `R$ ${stats.valor.toFixed(2).replace('.', ',')}`
+      ]);
+
+    const totalDias = statsBody.reduce((sum, r) => sum + parseInt(r[1]), 0);
+    const totalPontos = statsBody.reduce((sum, r) => sum + parseInt(r[2]), 0);
+    const totalValor = Object.values(statsGlobais).reduce((sum, s) => sum + s.valor, 0);
+
+    doc.autoTable({
+      startY: y,
+      margin: { left: margin, right: margin },
+      head: [['Servidor', 'Plantões', 'Pontos', 'Valor Estimado']],
+      body: [...statsBody, ['TOTAL', totalDias.toString(), totalPontos.toString(), `R$ ${totalValor.toFixed(2).replace('.', ',')}`]],
+      theme: 'grid',
+      headStyles: { fillColor: [16, 185, 129], textColor: 255, fontSize: 9, fontStyle: 'bold', halign: 'center' },
+      bodyStyles: { fontSize: 9, textColor: [50, 50, 50], halign: 'center' },
+      columnStyles: {
+        0: { halign: 'left', cellWidth: 60 },
+        3: { halign: 'right' }
+      },
+      alternateRowStyles: { fillColor: [240, 253, 244] },
+      didParseCell: (data) => {
+        if (data.row.index === statsBody.length) {
+          data.cell.styles.fontStyle = 'bold';
+          data.cell.styles.fillColor = [16, 185, 129];
+          data.cell.styles.textColor = [255, 255, 255];
+        }
+      },
+      didDrawPage: () => { drawFooter(pageNum); }
+    });
+    y = doc.lastAutoTable.finalY + 12;
+
+    // Legenda de pontos
+    doc.setFontSize(8);
+    doc.setTextColor(100);
+    doc.setFont(undefined, 'italic');
+    doc.text(`Sábado: ${PTS_SABADO} pontos (R$ ${VALOR_SABADO.toFixed(2)}) | Domingo/Feriado: ${PTS_DOM_FERIADO} pontos (R$ ${VALOR_DOM_FERIADO.toFixed(2)})`, margin, y);
+    drawFooter(pageNum);
+
+    // ===== PÁGINA: FÉRIAS E IMPEDIMENTOS =====
+    doc.addPage();
+    pageNum++;
+    y = margin;
+
+    doc.setTextColor(30, 30, 80);
+    doc.setFontSize(16);
+    doc.setFont(undefined, 'bold');
+    doc.text('FÉRIAS E INDISPONIBILIDADES 2026', pageWidth / 2, y + 5, { align: 'center' });
+    y += 12;
+    doc.setFontSize(8);
+    doc.setFont(undefined, 'normal');
+    doc.setTextColor(100);
+    doc.text('Períodos de férias e impedimentos/recusas por servidor', pageWidth / 2, y, { align: 'center' });
+    y += 10;
+
+    servidores.forEach(srv => {
+      addPageIfNeeded(35);
+
+      // Nome do servidor
+      doc.setFillColor(249, 115, 22); // orange
+      doc.roundedRect(margin, y, pageWidth - margin * 2, 7, 2, 2, 'F');
+      doc.setTextColor(255);
+      doc.setFontSize(9);
+      doc.setFont(undefined, 'bold');
+      doc.text(srv.nome, margin + 4, y + 5);
+      y += 10;
+
+      doc.setFont(undefined, 'normal');
+      doc.setTextColor(50, 50, 50);
+      doc.setFontSize(8);
+
+      if (srv.ferias.length > 0) {
+        doc.setFont(undefined, 'bold');
+        doc.text('Férias:', margin + 2, y);
+        doc.setFont(undefined, 'normal');
+        y += 5;
+        srv.ferias.forEach(([ini, fim]) => {
+          addPageIfNeeded(8);
+          const iniF = ini.split('-').reverse().join('/');
+          const fimF = fim.split('-').reverse().join('/');
+          doc.setFillColor(255, 247, 237);
+          doc.roundedRect(margin + 4, y - 3.5, pageWidth - margin * 2 - 8, 6, 1, 1, 'F');
+          doc.text(`🌴 ${iniF} a ${fimF}`, margin + 8, y);
+          y += 7;
+        });
+      }
+
+      if (srv.impedimentos && srv.impedimentos.length > 0) {
+        addPageIfNeeded(15);
+        doc.setFont(undefined, 'bold');
+        doc.setTextColor(220, 38, 38);
+        doc.text('Impedimentos/Recusas:', margin + 2, y);
+        doc.setFont(undefined, 'normal');
+        doc.setTextColor(50, 50, 50);
+        y += 5;
+        srv.impedimentos.forEach(([ini, fim]) => {
+          addPageIfNeeded(8);
+          const iniF = ini.split('-').reverse().join('/');
+          const fimF = fim.split('-').reverse().join('/');
+          doc.setFillColor(254, 242, 242);
+          doc.roundedRect(margin + 4, y - 3.5, pageWidth - margin * 2 - 8, 6, 1, 1, 'F');
+          doc.setTextColor(180, 30, 30);
+          doc.text(`✕ ${iniF} a ${fimF}`, margin + 8, y);
+          doc.setTextColor(50, 50, 50);
+          y += 7;
+        });
+      }
+
+      if (srv.ferias.length === 0 && (!srv.impedimentos || srv.impedimentos.length === 0)) {
+        doc.setTextColor(150);
+        doc.setFont(undefined, 'italic');
+        doc.text('Sem registros de férias ou impedimentos para 2026.', margin + 4, y);
+        doc.setFont(undefined, 'normal');
+        doc.setTextColor(50, 50, 50);
+        y += 6;
+      }
+
+      y += 5;
+    });
+    drawFooter(pageNum);
+
+    // ===== PÁGINA: FERIADOS E PONTOS FACULTATIVOS =====
+    doc.addPage();
+    pageNum++;
+    y = margin;
+
+    doc.setTextColor(30, 30, 80);
+    doc.setFontSize(16);
+    doc.setFont(undefined, 'bold');
+    doc.text('FERIADOS E PONTOS FACULTATIVOS 2026', pageWidth / 2, y + 5, { align: 'center' });
+    y += 12;
+    doc.setFontSize(8);
+    doc.setFont(undefined, 'normal');
+    doc.setTextColor(100);
+    doc.text('Portaria do Foro da 2ª CJM nº 1115 consolidado com Portaria STM nº 11682 (JMU)', pageWidth / 2, y, { align: 'center' });
+    y += 10;
+
+    // Tabela de Feriados
+    doc.setFillColor(220, 38, 38);
+    doc.roundedRect(margin, y, pageWidth - margin * 2, 8, 2, 2, 'F');
+    doc.setTextColor(255);
+    doc.setFontSize(10);
+    doc.setFont(undefined, 'bold');
+    doc.text(`FERIADOS 2026 (${feriadosPortaria.feriados.length} dias)`, margin + 4, y + 5.5);
+    y += 12;
+
+    doc.autoTable({
+      startY: y,
+      margin: { left: margin, right: margin },
+      head: [['Data', 'Feriado', 'Tipo/Base Legal']],
+      body: feriadosPortaria.feriados.map(f => [f.data.substring(0, 5), f.nome, f.tipo]),
+      theme: 'grid',
+      headStyles: { fillColor: [239, 68, 68], textColor: 255, fontSize: 8, fontStyle: 'bold', halign: 'center' },
+      bodyStyles: { fontSize: 8, textColor: [50, 50, 50] },
+      columnStyles: {
+        0: { cellWidth: 20, halign: 'center' },
+        1: { cellWidth: 60 },
+        2: { cellWidth: 80 }
+      },
+      alternateRowStyles: { fillColor: [254, 242, 242] },
+      didDrawPage: () => { drawFooter(pageNum); }
+    });
+    y = doc.lastAutoTable.finalY + 10;
+
+    addPageIfNeeded(50);
+
+    // Tabela de Pontos Facultativos
+    doc.setFillColor(16, 185, 129);
+    doc.roundedRect(margin, y, pageWidth - margin * 2, 8, 2, 2, 'F');
+    doc.setTextColor(255);
+    doc.setFontSize(10);
+    doc.setFont(undefined, 'bold');
+    doc.text(`PONTOS FACULTATIVOS 2026 (${feriadosPortaria.pontosFacultativos.length} dias)`, margin + 4, y + 5.5);
+    y += 12;
+
+    doc.autoTable({
+      startY: y,
+      margin: { left: margin, right: margin },
+      head: [['Data', 'Descrição', 'Observação']],
+      body: feriadosPortaria.pontosFacultativos.map(p => [p.data.substring(0, 5), p.nome, p.obs]),
+      theme: 'grid',
+      headStyles: { fillColor: [16, 185, 129], textColor: 255, fontSize: 8, fontStyle: 'bold', halign: 'center' },
+      bodyStyles: { fontSize: 8, textColor: [50, 50, 50] },
+      columnStyles: {
+        0: { cellWidth: 20, halign: 'center' },
+        1: { cellWidth: 60 },
+        2: { cellWidth: 80 }
+      },
+      alternateRowStyles: { fillColor: [240, 253, 244] },
+      didDrawPage: () => { drawFooter(pageNum); }
+    });
+    y = doc.lastAutoTable.finalY + 10;
+
+    // Nota Paixão de Cristo
+    addPageIfNeeded(20);
+    doc.setFontSize(7);
+    doc.setTextColor(100);
+    doc.setFont(undefined, 'italic');
+    doc.text('* Paixão de Cristo: Feriado religioso conforme Lei Federal nº 9.093/95, Art. 2º - "São feriados religiosos', margin, y);
+    y += 4;
+    doc.text('os dias de guarda, declarados em lei municipal, de acordo com a tradição local e em número não superior a quatro,', margin, y);
+    y += 4;
+    doc.text('neste incluída a Sexta-Feira da Paixão."', margin, y);
+    doc.setFont(undefined, 'normal');
+    drawFooter(pageNum);
+
+    // ===== PÁGINA: ESCALA COMPLETA ANUAL =====
+    doc.addPage();
+    pageNum++;
+    y = margin;
+
+    doc.setTextColor(30, 30, 80);
+    doc.setFontSize(16);
+    doc.setFont(undefined, 'bold');
+    doc.text('ESCALA COMPLETA - VISÃO ANUAL', pageWidth / 2, y + 5, { align: 'center' });
+    y += 15;
+
+    doc.autoTable({
+      startY: y,
+      margin: { left: margin, right: margin },
+      head: [['#', 'Data', 'Descrição', 'Magistrado', 'Servidor', 'Tipo', 'Pts', 'Valor']],
+      body: escalaTotal.map((p, i) => [
+        (i + 1).toString(),
+        p.data.split('-').reverse().join('/'),
+        p.desc,
+        p.juiz,
+        p.servidor,
+        p.tipo,
+        p.pontos.toString(),
+        `R$ ${p.valor.toFixed(0)}`
+      ]),
+      theme: 'grid',
+      headStyles: { fillColor: [49, 46, 129], textColor: 255, fontSize: 7, fontStyle: 'bold', halign: 'center' },
+      bodyStyles: { fontSize: 7, textColor: [50, 50, 50] },
+      columnStyles: {
+        0: { cellWidth: 8, halign: 'center' },
+        1: { cellWidth: 22, halign: 'center' },
+        2: { cellWidth: 28 },
+        3: { cellWidth: 28 },
+        4: { cellWidth: 42 },
+        5: { cellWidth: 12, halign: 'center' },
+        6: { cellWidth: 10, halign: 'center' },
+        7: { cellWidth: 20, halign: 'right' }
+      },
+      alternateRowStyles: { fillColor: [238, 242, 255] },
+      didDrawPage: (data) => { pageNum++; drawFooter(pageNum); }
+    });
+
+    // ===== SALVAR =====
+    doc.save('Escala_Plantao_2026_Completa.pdf');
   };
 
   const TabEscala = () => (
@@ -368,12 +763,31 @@ const App = () => {
             <h2 className="text-sm font-bold text-slate-800 uppercase">{emp.nome}</h2>
           </div>
           <div className="space-y-2">
-            {emp.ferias.length > 0 ? emp.ferias.map((f, i) => (
-              <div key={i} className="flex items-center gap-2 text-xs font-medium text-slate-600 bg-orange-50 p-2 rounded-lg border border-orange-100">
-                <Palmtree size={14} className="text-orange-500" />
-                {f[0].split('-').reverse().join('/')} a {f[1].split('-').reverse().join('/')}
+            {emp.ferias.length > 0 && (
+              <div className="space-y-2">
+                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">Férias</p>
+                {emp.ferias.map((f, i) => (
+                  <div key={i} className="flex items-center gap-2 text-xs font-medium text-slate-600 bg-orange-50 p-2 rounded-lg border border-orange-100">
+                    <Palmtree size={14} className="text-orange-500" />
+                    {f[0].split('-').reverse().join('/')} a {f[1].split('-').reverse().join('/')}
+                  </div>
+                ))}
               </div>
-            )) : <p className="text-xs text-slate-400 italic">Sem registros de férias para 2026.</p>}
+            )}
+            {emp.impedimentos && emp.impedimentos.length > 0 && (
+              <div className="space-y-2 mt-3">
+                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">Impedimentos/Recusas</p>
+                {emp.impedimentos.map((imp, i) => (
+                  <div key={i} className="flex items-center gap-2 text-xs font-medium text-slate-600 bg-red-50 p-2 rounded-lg border border-red-100">
+                    <X size={14} className="text-red-500" />
+                    {imp[0].split('-').reverse().join('/')} a {imp[1].split('-').reverse().join('/')}
+                  </div>
+                ))}
+              </div>
+            )}
+            {emp.ferias.length === 0 && (!emp.impedimentos || emp.impedimentos.length === 0) && (
+              <p className="text-xs text-slate-400 italic">Sem registros de férias para 2026.</p>
+            )}
           </div>
         </div>
       ))}
@@ -388,7 +802,10 @@ const App = () => {
           <h3 className="font-bold text-indigo-900">Cronograma de Feriados e Pontos Facultativos - 2026</h3>
         </div>
         <p className="text-xs text-indigo-700 leading-relaxed italic">
-          Baseado na Portaria STM nº 11682 (JMU) consolidado com feriados Municipais (São Paulo) e Estaduais (SP).
+          Baseado na Portaria do Foro da 2ª CJM nº 1115 (São Paulo) consolidado com a Portaria STM nº 11682 (JMU). Feriados de São Paulo sobrepõem pontos facultativos da Portaria STM.
+        </p>
+        <p className="text-[10px] text-indigo-600 leading-relaxed mt-2">
+          * <strong>Paixão de Cristo:</strong> Feriado religioso conforme Lei Federal nº 9.093/95, Art. 2º - "São feriados religiosos os dias de guarda, declarados em lei municipal, de acordo com a tradição local e em número não superior a quatro, neste incluída a Sexta-Feira da Paixão."
         </p>
       </div>
 
@@ -439,7 +856,7 @@ const App = () => {
   );
 
   return (
-    <div className="min-h-screen bg-[#f8fafc] p-4 md:p-8 font-sans text-slate-900">
+    <div className="min-h-screen bg-[#f8fafc] p-4 md:p-8 font-sans text-slate-900" >
       <style>{`.no-scrollbar::-webkit-scrollbar { display: none; }`}</style>
       <div className="max-w-6xl mx-auto">
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-10 gap-6">
@@ -451,8 +868,8 @@ const App = () => {
             </div>
           </div>
           <div className="w-full md:w-auto">
-            <button onClick={exportToExcel} className="w-full md:w-auto flex items-center justify-center gap-2 px-6 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-2xl text-sm font-bold transition-all shadow-lg shadow-emerald-100">
-              <FileSpreadsheet size={20} /> Exportar para Excel
+            <button onClick={exportToPDF} className="w-full md:w-auto flex items-center justify-center gap-2 px-6 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl text-sm font-bold transition-all shadow-lg shadow-indigo-100">
+              <FileText size={20} /> Exportar para PDF
             </button>
           </div>
         </div>
@@ -467,7 +884,7 @@ const App = () => {
           {activeTab === 'feriados' && <TabFeriados />}
         </div>
       </div>
-    </div>
+    </div >
   );
 };
 
