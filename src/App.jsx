@@ -82,7 +82,7 @@ const App = () => {
     // MARÇO
     { data: "2026-03-07", juiz: "Dra. Vera", desc: "Sábado", tipo: "SAB", fixo: "JEFFERSON FARIA" },
     { data: "2026-03-08", juiz: "Dra. Vera", desc: "Domingo", tipo: "DOM", fixo: "JEFFERSON DONIZETI" },
-    { data: "2026-03-14", juiz: "Dra. Vera", desc: "Sábado", tipo: "SAB", fixo: "JEFFERSON FARIA" },
+    { data: "2026-03-14", juiz: "Dra. Vera", desc: "Sábado", tipo: "SAB", fixo: "MARCO AURELIO" },
     { data: "2026-03-15", juiz: "Dra. Vera", desc: "Domingo", tipo: "DOM", fixo: "MARCO AURELIO" },
 
     // ABRIL
@@ -729,7 +729,7 @@ const App = () => {
                       <span>{s.nome}</span>
                       <span className="text-indigo-600">
                         {data.pontos} pts
-                        {s.nome === "JOHNSON TEIXEIRA" && "*"}
+                        {(s.nome === "JOHNSON TEIXEIRA" || s.nome === "JEFFERSON FARIA") && "*"}
                       </span>
                     </div>
                     <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
@@ -741,6 +741,8 @@ const App = () => {
             </div>
             <p className="text-[10px] text-slate-400 mt-4 italic leading-tight">
               * JOHNSON TEIXEIRA: Marco Aurélio solicitou troca do dia 07/02/2026 (Sábado) para compensação futura.
+              <br />
+              * JEFFERSON FARIA: Marco Aurélio solicitou troca do dia 14/03/2026 (Sábado). JEFFERSON FARIA irá oportunamente um dia de MARCO AURÉLIO.
             </p>
           </div>
           <div className="bg-slate-900 rounded-3xl p-5 text-slate-300 text-[10px] space-y-3">
