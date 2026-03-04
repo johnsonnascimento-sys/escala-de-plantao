@@ -431,6 +431,24 @@ const App = () => {
       },
       didDrawPage: () => { drawFooter(pageNum); }
     });
+
+    y = doc.lastAutoTable.finalY + 8;
+    addPageIfNeeded(28);
+    doc.setFontSize(9);
+    doc.setTextColor(80, 80, 80);
+    doc.setFont(undefined, 'bold');
+    doc.text('Avisos:', margin, y);
+    y += 5;
+    doc.setFont(undefined, 'normal');
+    const aviso1 = '* JOHNSON TEIXEIRA: Marco Aurélio solicitou troca do dia 07/02/2026 (Sábado) para compensação futura.';
+    const aviso2 = '* JEFFERSON FARIA: Marco Aurélio solicitou troca do dia 14/03/2026 (Sábado). JEFFERSON FARIA irá oportunamente um dia de MARCO AURÉLIO.';
+    const avisos = [aviso1, aviso2];
+    avisos.forEach((aviso) => {
+      const linhas = doc.splitTextToSize(aviso, pageWidth - (margin * 2));
+      doc.text(linhas, margin, y);
+      y += (linhas.length * 4) + 2;
+    });
+
     drawFooter(pageNum);
 
     // ===== PÁGINA: FÉRIAS E IMPEDIMENTOS =====
