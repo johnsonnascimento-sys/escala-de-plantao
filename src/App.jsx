@@ -392,6 +392,47 @@ const App = () => {
     });
     drawFooter(pageNum);
 
+    // ===== PÁGINA: BALANÇO GERAL (PONTOS) =====
+    doc.addPage();
+    pageNum++;
+    y = margin;
+
+    doc.setTextColor(30, 30, 80);
+    doc.setFontSize(16);
+    doc.setFont(undefined, 'bold');
+    doc.text('BALANÇO GERAL (PONTOS)', pageWidth / 2, y + 5, { align: 'center' });
+    y += 12;
+
+    const pontosBody = Object.entries(statsGlobais)
+      .sort((a, b) => b[1].pontos - a[1].pontos)
+      .map(([nome, stats]) => [nome, stats.pontos.toString()]);
+
+    const totalPontos = pontosBody.reduce((sum, r) => sum + parseInt(r[1]), 0);
+
+    autoTable(doc, {
+      startY: y,
+      margin: { left: margin, right: margin },
+      head: [['Servidor', 'Pontos']],
+      body: [...pontosBody, ['TOTAL', totalPontos.toString()]],
+      theme: 'grid',
+      headStyles: { fillColor: [16, 185, 129], textColor: 255, fontSize: 9, fontStyle: 'bold', halign: 'center' },
+      bodyStyles: { fontSize: 9, textColor: [50, 50, 50], halign: 'center' },
+      columnStyles: {
+        0: { halign: 'left', cellWidth: 120 },
+        1: { cellWidth: 40, halign: 'center' }
+      },
+      alternateRowStyles: { fillColor: [240, 253, 244] },
+      didParseCell: (data) => {
+        if (data.row.index === pontosBody.length) {
+          data.cell.styles.fontStyle = 'bold';
+          data.cell.styles.fillColor = [16, 185, 129];
+          data.cell.styles.textColor = [255, 255, 255];
+        }
+      },
+      didDrawPage: () => { drawFooter(pageNum); }
+    });
+    drawFooter(pageNum);
+
     // ===== PÁGINA: FÉRIAS E IMPEDIMENTOS =====
     doc.addPage();
     pageNum++;
