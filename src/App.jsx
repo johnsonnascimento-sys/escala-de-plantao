@@ -405,8 +405,7 @@ const App = () => {
     doc.setFontSize(8);
     doc.setFont(undefined, 'normal');
     doc.setTextColor(100);
-    doc.text('Distribuição de plantões, pontuação acumulada e valores por servidor', pageWidth / 2, y, { align: 'center' });
-    y += 10;
+    y += 6;
 
     const statsBody = Object.entries(statsGlobais)
       .sort((a, b) => b[1].pontos - a[1].pontos)
