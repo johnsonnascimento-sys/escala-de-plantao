@@ -9,7 +9,7 @@ import 'jspdf-autotable';
 
 const App = () => {
   const [activeTab, setActiveTab] = useState('escala'); // abas: escala, ferias, feriados
-  const [mesAtivo, setMesAtivo] = useState(1); // Iniciando em Fevereiro para visualização
+  const [mesAtivo, setMesAtivo] = useState(new Date().getMonth()); // Inicia no mês atual
   const [servidorSelecionado, setServidorSelecionado] = useState("Todos");
 
   // --- CONFIGURAÇÕES E DADOS ---
