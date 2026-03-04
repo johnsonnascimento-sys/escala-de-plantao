@@ -392,65 +392,6 @@ const App = () => {
     });
     drawFooter(pageNum);
 
-    // ===== PÁGINA: RESUMO ESTATÍSTICO =====
-    doc.addPage();
-    pageNum++;
-    y = margin;
-
-    doc.setTextColor(30, 30, 80);
-    doc.setFontSize(16);
-    doc.setFont(undefined, 'bold');
-    doc.text('RESUMO ESTATÍSTICO POR SERVIDOR', pageWidth / 2, y + 5, { align: 'center' });
-    y += 12;
-    doc.setFontSize(8);
-    doc.setFont(undefined, 'normal');
-    doc.setTextColor(100);
-    y += 6;
-
-    const statsBody = Object.entries(statsGlobais)
-      .sort((a, b) => b[1].pontos - a[1].pontos)
-      .map(([nome, stats]) => [
-        nome,
-        stats.dias.toString(),
-        stats.pontos.toString(),
-        `R$ ${stats.valor.toFixed(2).replace('.', ',')}`
-      ]);
-
-    const totalDias = statsBody.reduce((sum, r) => sum + parseInt(r[1]), 0);
-    const totalPontos = statsBody.reduce((sum, r) => sum + parseInt(r[2]), 0);
-    const totalValor = Object.values(statsGlobais).reduce((sum, s) => sum + s.valor, 0);
-
-    autoTable(doc, {
-      startY: y,
-      margin: { left: margin, right: margin },
-      head: [['Servidor', 'Plantões', 'Pontos', 'Valor Estimado']],
-      body: [...statsBody, ['TOTAL', totalDias.toString(), totalPontos.toString(), `R$ ${totalValor.toFixed(2).replace('.', ',')}`]],
-      theme: 'grid',
-      headStyles: { fillColor: [16, 185, 129], textColor: 255, fontSize: 9, fontStyle: 'bold', halign: 'center' },
-      bodyStyles: { fontSize: 9, textColor: [50, 50, 50], halign: 'center' },
-      columnStyles: {
-        0: { halign: 'left', cellWidth: 60 },
-        3: { halign: 'right' }
-      },
-      alternateRowStyles: { fillColor: [240, 253, 244] },
-      didParseCell: (data) => {
-        if (data.row.index === statsBody.length) {
-          data.cell.styles.fontStyle = 'bold';
-          data.cell.styles.fillColor = [16, 185, 129];
-          data.cell.styles.textColor = [255, 255, 255];
-        }
-      },
-      didDrawPage: () => { drawFooter(pageNum); }
-    });
-    y = doc.lastAutoTable.finalY + 12;
-
-    // Legenda de pontos
-    doc.setFontSize(8);
-    doc.setTextColor(100);
-    doc.setFont(undefined, 'italic');
-    doc.text(`Sábado: ${PTS_SABADO} pontos (R$ ${VALOR_SABADO.toFixed(2)}) | Domingo/Feriado: ${PTS_DOM_FERIADO} pontos (R$ ${VALOR_DOM_FERIADO.toFixed(2)})`, margin, y);
-    drawFooter(pageNum);
-
     // ===== PÁGINA: FÉRIAS E IMPEDIMENTOS =====
     doc.addPage();
     pageNum++;
