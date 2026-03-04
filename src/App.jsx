@@ -573,7 +573,7 @@ const App = () => {
     autoTable(doc, {
       startY: y,
       margin: { left: margin, right: margin },
-      head: [['#', 'Data', 'Descrição', 'Magistrado', 'Servidor', 'Tipo', 'Pts', 'Valor']],
+      head: [['#', 'Data', 'Descrição', 'Magistrado', 'Servidor', 'Tipo', 'Pts']],
       body: escalaTotal.map((p, i) => [
         (i + 1).toString(),
         p.data.split('-').reverse().join('/'),
@@ -581,8 +581,7 @@ const App = () => {
         p.juiz,
         p.servidor,
         p.tipo,
-        p.pontos.toString(),
-        `R$ ${p.valor.toFixed(0)}`
+        p.pontos.toString()
       ]),
       theme: 'grid',
       headStyles: { fillColor: [49, 46, 129], textColor: 255, fontSize: 7, fontStyle: 'bold', halign: 'center' },
@@ -594,8 +593,7 @@ const App = () => {
         3: { cellWidth: 28 },
         4: { cellWidth: 42 },
         5: { cellWidth: 12, halign: 'center' },
-        6: { cellWidth: 10, halign: 'center' },
-        7: { cellWidth: 20, halign: 'right' }
+        6: { cellWidth: 10, halign: 'center' }
       },
       alternateRowStyles: { fillColor: [238, 242, 255] },
       didDrawPage: (data) => { pageNum++; drawFooter(pageNum); }
