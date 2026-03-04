@@ -494,7 +494,7 @@ const App = () => {
           const fimF = fim.split('-').reverse().join('/');
           doc.setFillColor(255, 247, 237);
           doc.roundedRect(margin + 4, y - 3.5, pageWidth - margin * 2 - 8, 6, 1, 1, 'F');
-          doc.text(`🌴 ${iniF} a ${fimF}`, margin + 8, y);
+          doc.text(`- ${iniF} a ${fimF}`, margin + 8, y);
           y += 7;
         });
       }
@@ -514,7 +514,7 @@ const App = () => {
           doc.setFillColor(254, 242, 242);
           doc.roundedRect(margin + 4, y - 3.5, pageWidth - margin * 2 - 8, 6, 1, 1, 'F');
           doc.setTextColor(180, 30, 30);
-          doc.text(`✕ ${iniF} a ${fimF}`, margin + 8, y);
+          doc.text(`- ${iniF} a ${fimF}`, margin + 8, y);
           doc.setTextColor(50, 50, 50);
           y += 7;
         });
