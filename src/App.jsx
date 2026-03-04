@@ -9,16 +9,16 @@ import autoTable from 'jspdf-autotable';
 
 const App = () => {
   const [activeTab, setActiveTab] = useState('escala'); // abas: escala, ferias, feriados
-  const [mesAtivo, setMesAtivo] = useState(new Date().getMonth()); // Inicia no mÃªs atual
+  const [mesAtivo, setMesAtivo] = useState(new Date().getMonth()); // Inicia no mês atual
   const [servidorSelecionado, setServidorSelecionado] = useState("Todos");
 
-  // --- CONFIGURAÃ‡Ã•ES E DADOS ---
+  // --- CONFIGURAÇÕES E DADOS ---
   const PTS_SABADO = 3;
   const PTS_DOM_FERIADO = 4;
   const VALOR_SABADO = 582.53;
   const VALOR_DOM_FERIADO = 776.70;
   const ULTIMA_ATUALIZACAO_ESCALA = import.meta.env.VITE_LAST_UPDATE_BRASILIA || "N/D";
-  const NOMES_MESES = ["Janeiro", "Fevereiro", "MarÃ§o", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
+  const NOMES_MESES = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
 
   const servidores = [
     {
@@ -27,7 +27,7 @@ const App = () => {
       ferias: [["2026-01-07", "2026-02-04"], ["2026-02-05", "2026-02-13"], ["2026-02-19", "2026-02-27"]],
       impedimentos: [["2026-02-16", "2026-02-17"]]
     },
-    { nome: "CLÃUDIA MARIA", janOnly: true, ferias: [["2026-01-19", "2026-01-23"]], impedimentos: [] },
+    { nome: "CLÁUDIA MARIA", janOnly: true, ferias: [["2026-01-19", "2026-01-23"]], impedimentos: [] },
     {
       nome: "EMANUEL CORREA",
       janOnly: false,
@@ -65,91 +65,91 @@ const App = () => {
     },
   ];
 
-  // PlantÃµes base estritamente conforme as imagens fornecidas
-  // NENHUMA DATA EXTRA INCLUÃDA
+  // Plantões base estritamente conforme as imagens fornecidas
+  // NENHUMA DATA EXTRA INCLUÍDA
   const plantoesBase = [
     // JANEIRO
-    { data: "2026-01-10", juiz: "Dra. Vera", desc: "SÃ¡bado", tipo: "SAB", fixo: "CLÃUDIA MARIA" },
+    { data: "2026-01-10", juiz: "Dra. Vera", desc: "Sábado", tipo: "SAB", fixo: "CLÁUDIA MARIA" },
     { data: "2026-01-11", juiz: "Dra. Vera", desc: "Domingo", tipo: "DOM", fixo: "EMANUEL CORREA" },
-    { data: "2026-01-17", juiz: "Dra. Vera", desc: "SÃ¡bado", tipo: "SAB", fixo: "JEFFERSON DONIZETI" },
+    { data: "2026-01-17", juiz: "Dra. Vera", desc: "Sábado", tipo: "SAB", fixo: "JEFFERSON DONIZETI" },
     { data: "2026-01-18", juiz: "Dra. Vera", desc: "Domingo", tipo: "DOM", fixo: "JOHNSON TEIXEIRA" },
 
     // FEVEREIRO
-    { data: "2026-02-07", juiz: "Dr. Vitor", desc: "SÃ¡bado", tipo: "SAB", fixo: "JOHNSON TEIXEIRA" },
+    { data: "2026-02-07", juiz: "Dr. Vitor", desc: "Sábado", tipo: "SAB", fixo: "JOHNSON TEIXEIRA" },
     { data: "2026-02-08", juiz: "Dr. Vitor", desc: "Domingo", tipo: "DOM", fixo: "MARIA LUCIA" },
-    { data: "2026-02-14", juiz: "Dr. Vitor", desc: "SÃ¡bado", tipo: "SAB", fixo: "ANDRE LUIS" },
+    { data: "2026-02-14", juiz: "Dr. Vitor", desc: "Sábado", tipo: "SAB", fixo: "ANDRE LUIS" },
     { data: "2026-02-15", juiz: "Dr. Vitor", desc: "Domingo", tipo: "DOM", fixo: "ANDRE LUIS" },
 
-    // MARÃ‡O
-    { data: "2026-03-07", juiz: "Dra. Vera", desc: "SÃ¡bado", tipo: "SAB", fixo: "JEFFERSON FARIA" },
+    // MARÇO
+    { data: "2026-03-07", juiz: "Dra. Vera", desc: "Sábado", tipo: "SAB", fixo: "JEFFERSON FARIA" },
     { data: "2026-03-08", juiz: "Dra. Vera", desc: "Domingo", tipo: "DOM", fixo: "JEFFERSON DONIZETI" },
-    { data: "2026-03-14", juiz: "Dra. Vera", desc: "SÃ¡bado", tipo: "SAB", fixo: "MARCO AURELIO" },
+    { data: "2026-03-14", juiz: "Dra. Vera", desc: "Sábado", tipo: "SAB", fixo: "MARCO AURELIO" },
     { data: "2026-03-15", juiz: "Dra. Vera", desc: "Domingo", tipo: "DOM", fixo: "MARCO AURELIO" },
 
     // ABRIL
     { data: "2026-04-01", juiz: "Dr. Vitor", desc: "STM", tipo: "DOM", fixo: "EMANUEL CORREA" }, // STM (Jud) na imagem aparece como "STM" ou similar? Mantendo desc.
     { data: "2026-04-02", juiz: "Dr. Vitor", desc: "STM", tipo: "DOM", fixo: "JOHNSON TEIXEIRA" },
-    { data: "2026-04-03", juiz: "Dr. Vitor", desc: "PaixÃ£o", tipo: "DOM", fixo: "MARIA LUCIA" },
-    { data: "2026-04-04", juiz: "Dr. Vitor", desc: "SÃ¡bado", tipo: "SAB", fixo: "JEFFERSON FARIA" },
+    { data: "2026-04-03", juiz: "Dr. Vitor", desc: "Paixão", tipo: "DOM", fixo: "MARIA LUCIA" },
+    { data: "2026-04-04", juiz: "Dr. Vitor", desc: "Sábado", tipo: "SAB", fixo: "JEFFERSON FARIA" },
     { data: "2026-04-05", juiz: "Dr. Vitor", desc: "Domingo", tipo: "DOM", fixo: "ANDRE LUIS" },
-    { data: "2026-04-11", juiz: "Dr. Vitor", desc: "SÃ¡bado", tipo: "SAB", fixo: "JEFFERSON DONIZETI" },
+    { data: "2026-04-11", juiz: "Dr. Vitor", desc: "Sábado", tipo: "SAB", fixo: "JEFFERSON DONIZETI" },
     { data: "2026-04-12", juiz: "Dr. Vitor", desc: "Domingo", tipo: "DOM", fixo: "MARCO AURELIO" },
 
     // MAIO
     { data: "2026-05-01", juiz: "Dra. Vera", desc: "Trabalho", tipo: "DOM", fixo: "JOHNSON TEIXEIRA" },
-    { data: "2026-05-02", juiz: "Dra. Vera", desc: "SÃ¡bado", tipo: "SAB", fixo: "EMANUEL CORREA" },
+    { data: "2026-05-02", juiz: "Dra. Vera", desc: "Sábado", tipo: "SAB", fixo: "EMANUEL CORREA" },
     { data: "2026-05-03", juiz: "Dra. Vera", desc: "Domingo", tipo: "DOM", fixo: "MARIA LUCIA" },
-    { data: "2026-05-09", juiz: "Dra. Vera", desc: "SÃ¡bado", tipo: "SAB", fixo: "JEFFERSON FARIA" },
+    { data: "2026-05-09", juiz: "Dra. Vera", desc: "Sábado", tipo: "SAB", fixo: "JEFFERSON FARIA" },
     { data: "2026-05-10", juiz: "Dra. Vera", desc: "Domingo", tipo: "DOM", fixo: "JEFFERSON DONIZETI" },
-    { data: "2026-05-30", juiz: "Dr. Vitor", desc: "SÃ¡bado", tipo: "SAB", fixo: "ANDRE LUIS" },
+    { data: "2026-05-30", juiz: "Dr. Vitor", desc: "Sábado", tipo: "SAB", fixo: "ANDRE LUIS" },
     { data: "2026-05-31", juiz: "Dr. Vitor", desc: "Domingo", tipo: "DOM", fixo: "EMANUEL CORREA" },
 
     // JUNHO
     { data: "2026-06-04", juiz: "Dr. Vitor", desc: "Corpus Christi", tipo: "DOM", fixo: "MARCO AURELIO" },
-    { data: "2026-06-06", juiz: "Dr. Vitor", desc: "SÃ¡bado", tipo: "SAB", fixo: "JEFFERSON FARIA" },
+    { data: "2026-06-06", juiz: "Dr. Vitor", desc: "Sábado", tipo: "SAB", fixo: "JEFFERSON FARIA" },
     { data: "2026-06-07", juiz: "Dr. Vitor", desc: "Domingo", tipo: "DOM", fixo: "JOHNSON TEIXEIRA" },
-    { data: "2026-06-27", juiz: "Dra. Vera", desc: "SÃ¡bado", tipo: "SAB", fixo: "MARIA LUCIA" },
+    { data: "2026-06-27", juiz: "Dra. Vera", desc: "Sábado", tipo: "SAB", fixo: "MARIA LUCIA" },
     { data: "2026-06-28", juiz: "Dra. Vera", desc: "Domingo", tipo: "DOM", fixo: "ANDRE LUIS" },
 
     // JULHO
-    { data: "2026-07-04", juiz: "Dra. Vera", desc: "SÃ¡bado", tipo: "SAB", fixo: "JEFFERSON DONIZETI" },
+    { data: "2026-07-04", juiz: "Dra. Vera", desc: "Sábado", tipo: "SAB", fixo: "JEFFERSON DONIZETI" },
     { data: "2026-07-05", juiz: "Dra. Vera", desc: "Domingo", tipo: "DOM", fixo: "EMANUEL CORREA" },
-    { data: "2026-07-25", juiz: "Dr. Vitor", desc: "SÃ¡bado", tipo: "SAB", fixo: "JEFFERSON FARIA" },
+    { data: "2026-07-25", juiz: "Dr. Vitor", desc: "Sábado", tipo: "SAB", fixo: "JEFFERSON FARIA" },
     { data: "2026-07-26", juiz: "Dr. Vitor", desc: "Domingo", tipo: "DOM", fixo: "MARCO AURELIO" },
 
     // AGOSTO
-    { data: "2026-08-01", juiz: "Dr. Vitor", desc: "SÃ¡bado", tipo: "SAB", fixo: "MARIA LUCIA" },
+    { data: "2026-08-01", juiz: "Dr. Vitor", desc: "Sábado", tipo: "SAB", fixo: "MARIA LUCIA" },
     { data: "2026-08-02", juiz: "Dr. Vitor", desc: "Domingo", tipo: "DOM", fixo: "JOHNSON TEIXEIRA" },
-    { data: "2026-08-22", juiz: "Dra. Vera", desc: "SÃ¡bado", tipo: "SAB", fixo: "JEFFERSON DONIZETI" },
+    { data: "2026-08-22", juiz: "Dra. Vera", desc: "Sábado", tipo: "SAB", fixo: "JEFFERSON DONIZETI" },
     { data: "2026-08-23", juiz: "Dra. Vera", desc: "Domingo", tipo: "DOM", fixo: "ANDRE LUIS" },
-    { data: "2026-08-29", juiz: "Dra. Vera", desc: "SÃ¡bado", tipo: "SAB", fixo: "JEFFERSON FARIA" },
+    { data: "2026-08-29", juiz: "Dra. Vera", desc: "Sábado", tipo: "SAB", fixo: "JEFFERSON FARIA" },
     { data: "2026-08-30", juiz: "Dra. Vera", desc: "Domingo", tipo: "DOM", fixo: "MARIA LUCIA" },
 
     // SETEMBRO
-    { data: "2026-09-19", juiz: "Dr. Vitor", desc: "SÃ¡bado", tipo: "SAB", fixo: "EMANUEL CORREA" },
+    { data: "2026-09-19", juiz: "Dr. Vitor", desc: "Sábado", tipo: "SAB", fixo: "EMANUEL CORREA" },
     { data: "2026-09-20", juiz: "Dr. Vitor", desc: "Domingo", tipo: "DOM", fixo: "MARCO AURELIO" },
-    { data: "2026-09-26", juiz: "Dr. Vitor", desc: "SÃ¡bado", tipo: "SAB", fixo: "JEFFERSON DONIZETI" },
+    { data: "2026-09-26", juiz: "Dr. Vitor", desc: "Sábado", tipo: "SAB", fixo: "JEFFERSON DONIZETI" },
     { data: "2026-09-27", juiz: "Dr. Vitor", desc: "Domingo", tipo: "DOM", fixo: "JOHNSON TEIXEIRA" },
 
     // OUTUBRO
     { data: "2026-10-12", juiz: "Dra. Vera", desc: "Aparecida", tipo: "DOM", fixo: "JEFFERSON FARIA" },
-    { data: "2026-10-17", juiz: "Dra. Vera", desc: "SÃ¡bado", tipo: "SAB", fixo: "ANDRE LUIS" },
+    { data: "2026-10-17", juiz: "Dra. Vera", desc: "Sábado", tipo: "SAB", fixo: "ANDRE LUIS" },
     { data: "2026-10-18", juiz: "Dra. Vera", desc: "Domingo", tipo: "DOM", fixo: "EMANUEL CORREA" },
-    { data: "2026-10-24", juiz: "Dra. Vera", desc: "SÃ¡bado", tipo: "SAB", fixo: "MARIA LUCIA" },
+    { data: "2026-10-24", juiz: "Dra. Vera", desc: "Sábado", tipo: "SAB", fixo: "MARIA LUCIA" },
     { data: "2026-10-25", juiz: "Dra. Vera", desc: "Domingo", tipo: "DOM", fixo: "JEFFERSON DONIZETI" },
 
     // NOVEMBRO
-    { data: "2026-11-14", juiz: "Dr. Vitor", desc: "SÃ¡bado", tipo: "SAB", fixo: "JOHNSON TEIXEIRA" },
-    { data: "2026-11-15", juiz: "Dr. Vitor", desc: "ProclamaÃ§Ã£o", tipo: "DOM", fixo: "ANDRE LUIS" },
+    { data: "2026-11-14", juiz: "Dr. Vitor", desc: "Sábado", tipo: "SAB", fixo: "JOHNSON TEIXEIRA" },
+    { data: "2026-11-15", juiz: "Dr. Vitor", desc: "Proclamação", tipo: "DOM", fixo: "ANDRE LUIS" },
     { data: "2026-11-20", juiz: "Dr. Vitor", desc: "Conc. Negra", tipo: "DOM", fixo: "MARCO AURELIO" },
-    { data: "2026-11-21", juiz: "Dr. Vitor", desc: "SÃ¡bado", tipo: "SAB", fixo: "JEFFERSON FARIA" },
+    { data: "2026-11-21", juiz: "Dr. Vitor", desc: "Sábado", tipo: "SAB", fixo: "JEFFERSON FARIA" },
     { data: "2026-11-22", juiz: "Dr. Vitor", desc: "Domingo", tipo: "DOM", fixo: "MARIA LUCIA" },
 
     // DEZEMBRO
-    { data: "2026-12-08", juiz: "Dra. Vera", desc: "Dia JustiÃ§a", tipo: "DOM", fixo: "EMANUEL CORREA" },
-    { data: "2026-12-12", juiz: "Dra. Vera", desc: "SÃ¡bado", tipo: "SAB", fixo: "JEFFERSON DONIZETI" },
+    { data: "2026-12-08", juiz: "Dra. Vera", desc: "Dia Justiça", tipo: "DOM", fixo: "EMANUEL CORREA" },
+    { data: "2026-12-12", juiz: "Dra. Vera", desc: "Sábado", tipo: "SAB", fixo: "JEFFERSON DONIZETI" },
     { data: "2026-12-13", juiz: "Dra. Vera", desc: "Domingo", tipo: "DOM", fixo: "JOHNSON TEIXEIRA" },
-    { data: "2026-12-19", juiz: "Dra. Vera", desc: "SÃ¡bado", tipo: "SAB", fixo: "MARCO AURELIO" },
+    { data: "2026-12-19", juiz: "Dra. Vera", desc: "Sábado", tipo: "SAB", fixo: "MARCO AURELIO" },
   ];
 
   const parseDate = (dateStr) => {
@@ -167,12 +167,12 @@ const App = () => {
     });
   };
 
-  // --- LÃ“GICA DE GERAÃ‡ÃƒO DA ESCALA AUTOMÃTICA ---
+  // --- LÓGICA DE GERAÇÃO DA ESCALA AUTOMÁTICA ---
   const escalaTotal = useMemo(() => {
     // 1. Inicializar saldo de pontos dos servidores
     const saldoPontos = servidores.reduce((acc, s) => ({ ...acc, [s.nome]: 0 }), {});
 
-    // 2. Processar cada plantÃ£o cronologicamente
+    // 2. Processar cada plantão cronologicamente
     return plantoesBase.map(plantao => {
       const pontos = plantao.tipo === "SAB" ? PTS_SABADO : PTS_DOM_FERIADO;
       const valor = plantao.tipo === "SAB" ? VALOR_SABADO : VALOR_DOM_FERIADO;
@@ -183,19 +183,19 @@ const App = () => {
       if (plantao.fixo) {
         escolhidoNome = plantao.fixo;
       } else {
-        // Filtrar servidores disponÃ­veis
+        // Filtrar servidores disponíveis
         const disponiveis = servidores.filter(s => {
-          // Verificar Regra ClÃ¡udia (Jan Only)
+          // Verificar Regra Cláudia (Jan Only)
           if (s.janOnly && mes !== 0) return false;
 
-          // Verificar FÃ©rias
+          // Verificar Férias
           if (isEmFerias(s, plantao.data)) return false;
 
           return true;
         });
 
-        // Ordenar por menor pontuaÃ§Ã£o acumulada (CritÃ©rio de Equidade)
-        // Se empate, ordem alfabÃ©tica para estabilidade
+        // Ordenar por menor pontuação acumulada (Critério de Equidade)
+        // Se empate, ordem alfabética para estabilidade
         disponiveis.sort((a, b) => {
           const diff = saldoPontos[a.nome] - saldoPontos[b.nome];
           if (diff !== 0) return diff;
@@ -205,7 +205,7 @@ const App = () => {
         if (disponiveis.length > 0) {
           escolhidoNome = disponiveis[0].nome;
         } else {
-          escolhidoNome = "Nenhum DisponÃ­vel"; // Fallback
+          escolhidoNome = "Nenhum Disponível"; // Fallback
         }
       }
 
@@ -216,7 +216,7 @@ const App = () => {
 
       return { ...plantao, servidor: escolhidoNome, pontos, valor };
     });
-  }, []); // DependÃªncias vazias pois dados base sÃ£o constantes dentro do componente
+  }, []); // Dependências vazias pois dados base são constantes dentro do componente
 
   const statsGlobais = useMemo(() => {
     const counts = {};
@@ -236,37 +236,37 @@ const App = () => {
     return escalaTotal.filter(p => p.servidor === servidorSelecionado);
   }, [escalaTotal, mesAtivo, servidorSelecionado]);
 
-  // --- DADOS DA PORTARIA 2Âª CJM NÂº 1115 (SP) + PORTARIA STM 11682 (JMU) ---
-  // Baseado na Portaria do Foro da 2Âª CJM considerando feriados municipais e estaduais de SÃ£o Paulo
+  // --- DADOS DA PORTARIA 2ª CJM Nº 1115 (SP) + PORTARIA STM 11682 (JMU) ---
+  // Baseado na Portaria do Foro da 2ª CJM considerando feriados municipais e estaduais de São Paulo
   const feriadosPortaria = {
     feriados: [
       { data: "01/01/2026", nome: "Ano Novo", tipo: "Nacional" },
-      { data: "25/01/2026", nome: "AniversÃ¡rio de SÃ£o Paulo", tipo: "Municipal (Lei 14.485/07)" },
+      { data: "25/01/2026", nome: "Aniversário de São Paulo", tipo: "Municipal (Lei 14.485/07)" },
       { data: "16/02/2026", nome: "Feriado Judicial", tipo: "Judicial (Lei 5.010/66)" },
       { data: "17/02/2026", nome: "Feriado Judicial", tipo: "Judicial (Lei 5.010/66)" },
       { data: "01/04/2026", nome: "Feriado Judicial", tipo: "Judicial (Lei 5.010/66)" },
       { data: "02/04/2026", nome: "Feriado Judicial", tipo: "Judicial (Lei 5.010/66)" },
-      { data: "03/04/2026", nome: "PaixÃ£o de Cristo*", tipo: "Judicial (Lei 5.010/66)" },
+      { data: "03/04/2026", nome: "Paixão de Cristo*", tipo: "Judicial (Lei 5.010/66)" },
       { data: "21/04/2026", nome: "Tiradentes", tipo: "Nacional" },
       { data: "01/05/2026", nome: "Dia do Trabalho", tipo: "Nacional" },
       { data: "04/06/2026", nome: "Corpus Christi", tipo: "Municipal (Lei 14.485/07)" },
-      { data: "09/07/2026", nome: "Data Magna de SÃ£o Paulo", tipo: "Estadual (Lei 9.497/97)" },
+      { data: "09/07/2026", nome: "Data Magna de São Paulo", tipo: "Estadual (Lei 9.497/97)" },
       { data: "11/08/2026", nome: "Dia do Magistrado/Advogado", tipo: "Judicial (Lei 5.010/66)" },
-      { data: "07/09/2026", nome: "IndependÃªncia do Brasil", tipo: "Nacional" },
+      { data: "07/09/2026", nome: "Independência do Brasil", tipo: "Nacional" },
       { data: "12/10/2026", nome: "Nsa. Sra. Aparecida", tipo: "Nacional" },
       { data: "02/11/2026", nome: "Finados", tipo: "Nacional" },
-      { data: "20/11/2026", nome: "ConsciÃªncia Negra", tipo: "Nacional" },
-      { data: "08/12/2026", nome: "Dia da JustiÃ§a", tipo: "Judicial (Lei 5.010/66)" },
+      { data: "20/11/2026", nome: "Consciência Negra", tipo: "Nacional" },
+      { data: "08/12/2026", nome: "Dia da Justiça", tipo: "Judicial (Lei 5.010/66)" },
       { data: "25/12/2026", nome: "Natal", tipo: "Nacional" },
     ],
     pontosFacultativos: [
-      { data: "18/02/2026", nome: "Quarta-Feira de Cinzas", obs: "AtÃ© Ã s 14 horas" },
-      { data: "20/04/2026", nome: "Ponto Facultativo", obs: "Portaria 2Âª CJM 1115" },
-      { data: "05/06/2026", nome: "Ponto Facultativo", obs: "Portaria 2Âª CJM 1115" },
-      { data: "10/07/2026", nome: "Ponto Facultativo", obs: "Portaria 2Âª CJM 1115" },
-      { data: "10/08/2026", nome: "Ponto Facultativo", obs: "Portaria 2Âª CJM 1115" },
-      { data: "30/10/2026", nome: "Dia do Servidor PÃºblico", obs: "Transferido de 28/10" },
-      { data: "07/12/2026", nome: "Ponto Facultativo", obs: "VÃ©spera Dia da JustiÃ§a" },
+      { data: "18/02/2026", nome: "Quarta-Feira de Cinzas", obs: "Até às 14 horas" },
+      { data: "20/04/2026", nome: "Ponto Facultativo", obs: "Portaria 2ª CJM 1115" },
+      { data: "05/06/2026", nome: "Ponto Facultativo", obs: "Portaria 2ª CJM 1115" },
+      { data: "10/07/2026", nome: "Ponto Facultativo", obs: "Portaria 2ª CJM 1115" },
+      { data: "10/08/2026", nome: "Ponto Facultativo", obs: "Portaria 2ª CJM 1115" },
+      { data: "30/10/2026", nome: "Dia do Servidor Público", obs: "Transferido de 28/10" },
+      { data: "07/12/2026", nome: "Ponto Facultativo", obs: "Véspera Dia da Justiça" },
     ],
     2027: [
       { data: "01/01/2027", nome: "Ano Novo", tipo: "Nacional" },
@@ -307,30 +307,30 @@ const App = () => {
 
     doc.setTextColor(255);
     doc.setFontSize(12);
-    doc.text('JUSTIÃ‡A MILITAR DA UNIÃƒO', pageWidth / 2, 50, { align: 'center' });
+    doc.text('JUSTIÇA MILITAR DA UNIÃO', pageWidth / 2, 50, { align: 'center' });
     doc.setFontSize(10);
-    doc.text('2Âª CircunscriÃ§Ã£o JudiciÃ¡ria Militar - SÃ£o Paulo', pageWidth / 2, 58, { align: 'center' });
+    doc.text('2ª Circunscrição Judiciária Militar - São Paulo', pageWidth / 2, 58, { align: 'center' });
 
     doc.setFontSize(28);
     doc.setFont(undefined, 'bold');
-    doc.text('ESCALA DE PLANTÃƒO', pageWidth / 2, 110, { align: 'center' });
+    doc.text('ESCALA DE PLANTÃO', pageWidth / 2, 110, { align: 'center' });
     doc.setFontSize(40);
     doc.text('2026', pageWidth / 2, 130, { align: 'center' });
     doc.setFont(undefined, 'normal');
 
     doc.setFontSize(10);
-    doc.text('GestÃ£o Integrada de PlantÃµes, FÃ©rias e Feriados', pageWidth / 2, 150, { align: 'center' });
+    doc.text('Gestão Integrada de Plantões, Férias e Feriados', pageWidth / 2, 150, { align: 'center' });
 
     doc.setFontSize(9);
     doc.setTextColor(180, 180, 220);
-    doc.text('Portaria do Foro da 2Âª CJM nÂº 1115', pageWidth / 2, 200, { align: 'center' });
-    doc.text('Portaria STM nÂº 11682 (JMU)', pageWidth / 2, 207, { align: 'center' });
+    doc.text('Portaria do Foro da 2ª CJM nº 1115', pageWidth / 2, 200, { align: 'center' });
+    doc.text('Portaria STM nº 11682 (JMU)', pageWidth / 2, 207, { align: 'center' });
     doc.text(`Documento gerado em ${new Date().toLocaleDateString('pt-BR')}`, pageWidth / 2, 220, { align: 'center' });
     doc.text(`Última atualização da escala (Brasília): ${ULTIMA_ATUALIZACAO_ESCALA}`, pageWidth / 2, 227, { align: 'center' });
 
     let pageNum = 1;
 
-    // ===== PÃGINA 2: ESCALA DE PLANTÃ•ES POR MÃŠS =====
+    // ===== PÁGINA 2: ESCALA DE PLANTÕES POR MÊS =====
     doc.addPage();
     pageNum++;
     y = margin;
@@ -338,15 +338,15 @@ const App = () => {
     doc.setTextColor(30, 30, 80);
     doc.setFontSize(16);
     doc.setFont(undefined, 'bold');
-    doc.text('ESCALA DE PLANTÃ•ES 2026', pageWidth / 2, y + 5, { align: 'center' });
+    doc.text('ESCALA DE PLANTÕES 2026', pageWidth / 2, y + 5, { align: 'center' });
     y += 12;
     doc.setFontSize(8);
     doc.setFont(undefined, 'normal');
     doc.setTextColor(100);
-    doc.text('PlantÃµes de sÃ¡bados, domingos e feriados com magistrado e servidor designados', pageWidth / 2, y, { align: 'center' });
+    doc.text('Plantões de sábados, domingos e feriados com magistrado e servidor designados', pageWidth / 2, y, { align: 'center' });
     y += 10;
 
-    const mesesNomes = ['Janeiro', 'Fevereiro', 'MarÃ§o', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
+    const mesesNomes = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
 
     mesesNomes.forEach((mesNome, mesIdx) => {
       const plantoesMes = escalaTotal.filter(p => parseInt(p.data.split('-')[1]) === mesIdx + 1);
@@ -354,7 +354,7 @@ const App = () => {
 
       addPageIfNeeded(40);
 
-      // CabeÃ§alho do mÃªs
+      // Cabeçalho do mês
       doc.setFillColor(49, 46, 129);
       doc.roundedRect(margin, y, pageWidth - margin * 2, 8, 2, 2, 'F');
       doc.setTextColor(255);
@@ -363,11 +363,11 @@ const App = () => {
       doc.text(mesNome.toUpperCase(), margin + 4, y + 5.5);
       y += 12;
 
-      // Tabela do mÃªs
+      // Tabela do mês
       autoTable(doc, {
         startY: y,
         margin: { left: margin, right: margin },
-        head: [['Data', 'Dia/DescriÃ§Ã£o', 'Magistrado', 'Servidor', 'Pts']],
+        head: [['Data', 'Dia/Descrição', 'Magistrado', 'Servidor', 'Pts']],
         body: plantoesMes.map(p => [
           p.data.split('-').reverse().join('/'),
           p.desc,
@@ -392,7 +392,7 @@ const App = () => {
     });
     drawFooter(pageNum);
 
-    // ===== PÃGINA: RESUMO ESTATÃSTICO =====
+    // ===== PÁGINA: RESUMO ESTATÍSTICO =====
     doc.addPage();
     pageNum++;
     y = margin;
@@ -400,12 +400,12 @@ const App = () => {
     doc.setTextColor(30, 30, 80);
     doc.setFontSize(16);
     doc.setFont(undefined, 'bold');
-    doc.text('RESUMO ESTATÃSTICO POR SERVIDOR', pageWidth / 2, y + 5, { align: 'center' });
+    doc.text('RESUMO ESTATÍSTICO POR SERVIDOR', pageWidth / 2, y + 5, { align: 'center' });
     y += 12;
     doc.setFontSize(8);
     doc.setFont(undefined, 'normal');
     doc.setTextColor(100);
-    doc.text('DistribuiÃ§Ã£o de plantÃµes, pontuaÃ§Ã£o acumulada e valores por servidor', pageWidth / 2, y, { align: 'center' });
+    doc.text('Distribuição de plantões, pontuação acumulada e valores por servidor', pageWidth / 2, y, { align: 'center' });
     y += 10;
 
     const statsBody = Object.entries(statsGlobais)
@@ -424,7 +424,7 @@ const App = () => {
     autoTable(doc, {
       startY: y,
       margin: { left: margin, right: margin },
-      head: [['Servidor', 'PlantÃµes', 'Pontos', 'Valor Estimado']],
+      head: [['Servidor', 'Plantões', 'Pontos', 'Valor Estimado']],
       body: [...statsBody, ['TOTAL', totalDias.toString(), totalPontos.toString(), `R$ ${totalValor.toFixed(2).replace('.', ',')}`]],
       theme: 'grid',
       headStyles: { fillColor: [16, 185, 129], textColor: 255, fontSize: 9, fontStyle: 'bold', halign: 'center' },
@@ -449,10 +449,10 @@ const App = () => {
     doc.setFontSize(8);
     doc.setTextColor(100);
     doc.setFont(undefined, 'italic');
-    doc.text(`SÃ¡bado: ${PTS_SABADO} pontos (R$ ${VALOR_SABADO.toFixed(2)}) | Domingo/Feriado: ${PTS_DOM_FERIADO} pontos (R$ ${VALOR_DOM_FERIADO.toFixed(2)})`, margin, y);
+    doc.text(`Sábado: ${PTS_SABADO} pontos (R$ ${VALOR_SABADO.toFixed(2)}) | Domingo/Feriado: ${PTS_DOM_FERIADO} pontos (R$ ${VALOR_DOM_FERIADO.toFixed(2)})`, margin, y);
     drawFooter(pageNum);
 
-    // ===== PÃGINA: FÃ‰RIAS E IMPEDIMENTOS =====
+    // ===== PÁGINA: FÉRIAS E IMPEDIMENTOS =====
     doc.addPage();
     pageNum++;
     y = margin;
@@ -460,12 +460,12 @@ const App = () => {
     doc.setTextColor(30, 30, 80);
     doc.setFontSize(16);
     doc.setFont(undefined, 'bold');
-    doc.text('FÃ‰RIAS E INDISPONIBILIDADES 2026', pageWidth / 2, y + 5, { align: 'center' });
+    doc.text('FÉRIAS E INDISPONIBILIDADES 2026', pageWidth / 2, y + 5, { align: 'center' });
     y += 12;
     doc.setFontSize(8);
     doc.setFont(undefined, 'normal');
     doc.setTextColor(100);
-    doc.text('PerÃ­odos de fÃ©rias e impedimentos/recusas por servidor', pageWidth / 2, y, { align: 'center' });
+    doc.text('Períodos de férias e impedimentos/recusas por servidor', pageWidth / 2, y, { align: 'center' });
     y += 10;
 
     servidores.forEach(srv => {
@@ -486,7 +486,7 @@ const App = () => {
 
       if (srv.ferias.length > 0) {
         doc.setFont(undefined, 'bold');
-        doc.text('FÃ©rias:', margin + 2, y);
+        doc.text('Férias:', margin + 2, y);
         doc.setFont(undefined, 'normal');
         y += 5;
         srv.ferias.forEach(([ini, fim]) => {
@@ -495,7 +495,7 @@ const App = () => {
           const fimF = fim.split('-').reverse().join('/');
           doc.setFillColor(255, 247, 237);
           doc.roundedRect(margin + 4, y - 3.5, pageWidth - margin * 2 - 8, 6, 1, 1, 'F');
-          doc.text(`ðŸŒ´ ${iniF} a ${fimF}`, margin + 8, y);
+          doc.text(`🌴 ${iniF} a ${fimF}`, margin + 8, y);
           y += 7;
         });
       }
@@ -515,7 +515,7 @@ const App = () => {
           doc.setFillColor(254, 242, 242);
           doc.roundedRect(margin + 4, y - 3.5, pageWidth - margin * 2 - 8, 6, 1, 1, 'F');
           doc.setTextColor(180, 30, 30);
-          doc.text(`âœ• ${iniF} a ${fimF}`, margin + 8, y);
+          doc.text(`✕ ${iniF} a ${fimF}`, margin + 8, y);
           doc.setTextColor(50, 50, 50);
           y += 7;
         });
@@ -524,7 +524,7 @@ const App = () => {
       if (srv.ferias.length === 0 && (!srv.impedimentos || srv.impedimentos.length === 0)) {
         doc.setTextColor(150);
         doc.setFont(undefined, 'italic');
-        doc.text('Sem registros de fÃ©rias ou impedimentos para 2026.', margin + 4, y);
+        doc.text('Sem registros de férias ou impedimentos para 2026.', margin + 4, y);
         doc.setFont(undefined, 'normal');
         doc.setTextColor(50, 50, 50);
         y += 6;
@@ -534,7 +534,7 @@ const App = () => {
     });
     drawFooter(pageNum);
 
-    // ===== PÃGINA: FERIADOS E PONTOS FACULTATIVOS =====
+    // ===== PÁGINA: FERIADOS E PONTOS FACULTATIVOS =====
     doc.addPage();
     pageNum++;
     y = margin;
@@ -547,7 +547,7 @@ const App = () => {
     doc.setFontSize(8);
     doc.setFont(undefined, 'normal');
     doc.setTextColor(100);
-    doc.text('Portaria do Foro da 2Âª CJM nÂº 1115 consolidado com Portaria STM nÂº 11682 (JMU)', pageWidth / 2, y, { align: 'center' });
+    doc.text('Portaria do Foro da 2ª CJM nº 1115 consolidado com Portaria STM nº 11682 (JMU)', pageWidth / 2, y, { align: 'center' });
     y += 10;
 
     // Tabela de Feriados
@@ -591,7 +591,7 @@ const App = () => {
     autoTable(doc, {
       startY: y,
       margin: { left: margin, right: margin },
-      head: [['Data', 'DescriÃ§Ã£o', 'ObservaÃ§Ã£o']],
+      head: [['Data', 'Descrição', 'Observação']],
       body: feriadosPortaria.pontosFacultativos.map(p => [p.data.substring(0, 5), p.nome, p.obs]),
       theme: 'grid',
       headStyles: { fillColor: [16, 185, 129], textColor: 255, fontSize: 8, fontStyle: 'bold', halign: 'center' },
@@ -606,20 +606,20 @@ const App = () => {
     });
     y = doc.lastAutoTable.finalY + 10;
 
-    // Nota PaixÃ£o de Cristo
+    // Nota Paixão de Cristo
     addPageIfNeeded(20);
     doc.setFontSize(7);
     doc.setTextColor(100);
     doc.setFont(undefined, 'italic');
-    doc.text('* PaixÃ£o de Cristo: Feriado religioso conforme Lei Federal nÂº 9.093/95, Art. 2Âº - "SÃ£o feriados religiosos', margin, y);
+    doc.text('* Paixão de Cristo: Feriado religioso conforme Lei Federal nº 9.093/95, Art. 2º - "São feriados religiosos', margin, y);
     y += 4;
-    doc.text('os dias de guarda, declarados em lei municipal, de acordo com a tradiÃ§Ã£o local e em nÃºmero nÃ£o superior a quatro,', margin, y);
+    doc.text('os dias de guarda, declarados em lei municipal, de acordo com a tradição local e em número não superior a quatro,', margin, y);
     y += 4;
-    doc.text('neste incluÃ­da a Sexta-Feira da PaixÃ£o."', margin, y);
+    doc.text('neste incluída a Sexta-Feira da Paixão."', margin, y);
     doc.setFont(undefined, 'normal');
     drawFooter(pageNum);
 
-    // ===== PÃGINA: ESCALA COMPLETA ANUAL =====
+    // ===== PÁGINA: ESCALA COMPLETA ANUAL =====
     doc.addPage();
     pageNum++;
     y = margin;
@@ -627,13 +627,13 @@ const App = () => {
     doc.setTextColor(30, 30, 80);
     doc.setFontSize(16);
     doc.setFont(undefined, 'bold');
-    doc.text('ESCALA COMPLETA - VISÃƒO ANUAL', pageWidth / 2, y + 5, { align: 'center' });
+    doc.text('ESCALA COMPLETA - VISÃO ANUAL', pageWidth / 2, y + 5, { align: 'center' });
     y += 15;
 
     autoTable(doc, {
       startY: y,
       margin: { left: margin, right: margin },
-      head: [['#', 'Data', 'DescriÃ§Ã£o', 'Magistrado', 'Servidor', 'Tipo', 'Pts', 'Valor']],
+      head: [['#', 'Data', 'Descrição', 'Magistrado', 'Servidor', 'Tipo', 'Pts', 'Valor']],
       body: escalaTotal.map((p, i) => [
         (i + 1).toString(),
         p.data.split('-').reverse().join('/'),
@@ -681,7 +681,7 @@ const App = () => {
         <div className="lg:col-span-2 space-y-4">
           <div className="flex justify-between items-center px-2">
             <h2 className="text-sm font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
-              <Briefcase size={16} /> {servidorSelecionado === "Todos" ? `PlantÃµes de ${NOMES_MESES[mesAtivo]}` : `Escala Anual: ${servidorSelecionado}`}
+              <Briefcase size={16} /> {servidorSelecionado === "Todos" ? `Plantões de ${NOMES_MESES[mesAtivo]}` : `Escala Anual: ${servidorSelecionado}`}
             </h2>
             <div className={`flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200 ${servidorSelecionado !== 'Todos' ? 'opacity-30 pointer-events-none' : ''}`}>
               <button onClick={() => setMesAtivo(m => Math.max(0, m - 1))} className="p-1.5 hover:bg-white rounded-lg transition-all"><ChevronLeft size={16} /></button>
@@ -705,7 +705,7 @@ const App = () => {
                       <span className="font-semibold text-slate-700 text-xs">{p.juiz}</span>
                     </div>
                   </div>
-                  <div className={`p-2.5 rounded-xl flex items-center gap-3 border ${p.servidor === "Nenhum DisponÃ­vel" ? "bg-red-50 border-red-200" : (p.servidor === "Nenhum" ? "bg-red-50" : "bg-emerald-50 border-emerald-100")}`}>
+                  <div className={`p-2.5 rounded-xl flex items-center gap-3 border ${p.servidor === "Nenhum Disponível" ? "bg-red-50 border-red-200" : (p.servidor === "Nenhum" ? "bg-red-50" : "bg-emerald-50 border-emerald-100")}`}>
                     <User size={16} className="text-emerald-500" />
                     <div className="flex-1">
                       <span className="text-[9px] text-slate-400 font-bold uppercase block">Servidor(a)</span>
@@ -721,7 +721,7 @@ const App = () => {
 
         <div className="space-y-6">
           <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
-            <h3 className="font-bold text-slate-800 mb-4 flex items-center gap-2 text-xs uppercase tracking-widest border-b pb-4"><Coins size={16} className="text-amber-500" /> BalanÃ§o Geral</h3>
+            <h3 className="font-bold text-slate-800 mb-4 flex items-center gap-2 text-xs uppercase tracking-widest border-b pb-4"><Coins size={16} className="text-amber-500" /> Balanço Geral</h3>
             <div className="space-y-4">
               {servidores.map(s => {
                 const data = statsGlobais[s.nome] || { dias: 0, pontos: 0 };
@@ -743,16 +743,16 @@ const App = () => {
               })}
             </div>
             <p className="text-[10px] text-slate-400 mt-4 italic leading-tight">
-              * JOHNSON TEIXEIRA: Marco AurÃ©lio solicitou troca do dia 07/02/2026 (SÃ¡bado) para compensaÃ§Ã£o futura.
+              * JOHNSON TEIXEIRA: Marco Aurélio solicitou troca do dia 07/02/2026 (Sábado) para compensação futura.
               <br />
-              * JEFFERSON FARIA: Marco AurÃ©lio solicitou troca do dia 14/03/2026 (SÃ¡bado). JEFFERSON FARIA irÃ¡ oportunamente um dia de MARCO AURÃ‰LIO.
+              * JEFFERSON FARIA: Marco Aurélio solicitou troca do dia 14/03/2026 (Sábado). JEFFERSON FARIA irá oportunamente um dia de MARCO AURÉLIO.
             </p>
           </div>
           <div className="bg-slate-900 rounded-3xl p-5 text-slate-300 text-[10px] space-y-3">
             <h3 className="font-bold text-white text-xs flex items-center gap-2"><CheckCircle2 size={14} className="text-emerald-400" /> Regras Ativas</h3>
-            <p>â€¢ ClÃ¡udia apenas Janeiro (Teletrabalho em Fev).</p>
-            <p>â€¢ Equidade: SÃ¡bado=3, Dom/Fer=4.</p>
-            <p>â€¢ Algoritmo de Equidade AutomÃ¡tico Ativo.</p>
+            <p>• Cláudia apenas Janeiro (Teletrabalho em Fev).</p>
+            <p>• Equidade: Sábado=3, Dom/Fer=4.</p>
+            <p>• Algoritmo de Equidade Automático Ativo.</p>
           </div>
         </div>
       </div>
@@ -770,7 +770,7 @@ const App = () => {
           <div className="space-y-2">
             {emp.ferias.length > 0 && (
               <div className="space-y-2">
-                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">FÃ©rias</p>
+                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">Férias</p>
                 {emp.ferias.map((f, i) => (
                   <div key={i} className="flex items-center gap-2 text-xs font-medium text-slate-600 bg-orange-50 p-2 rounded-lg border border-orange-100">
                     <Palmtree size={14} className="text-orange-500" />
@@ -791,7 +791,7 @@ const App = () => {
               </div>
             )}
             {emp.ferias.length === 0 && (!emp.impedimentos || emp.impedimentos.length === 0) && (
-              <p className="text-xs text-slate-400 italic">Sem registros de fÃ©rias para 2026.</p>
+              <p className="text-xs text-slate-400 italic">Sem registros de férias para 2026.</p>
             )}
           </div>
         </div>
@@ -807,10 +807,10 @@ const App = () => {
           <h3 className="font-bold text-indigo-900">Cronograma de Feriados e Pontos Facultativos - 2026</h3>
         </div>
         <p className="text-xs text-indigo-700 leading-relaxed italic">
-          Baseado na Portaria do Foro da 2Âª CJM nÂº 1115 (SÃ£o Paulo) consolidado com a Portaria STM nÂº 11682 (JMU). Feriados de SÃ£o Paulo sobrepÃµem pontos facultativos da Portaria STM.
+          Baseado na Portaria do Foro da 2ª CJM nº 1115 (São Paulo) consolidado com a Portaria STM nº 11682 (JMU). Feriados de São Paulo sobrepõem pontos facultativos da Portaria STM.
         </p>
         <p className="text-[10px] text-indigo-600 leading-relaxed mt-2">
-          * <strong>PaixÃ£o de Cristo:</strong> Feriado religioso conforme Lei Federal nÂº 9.093/95, Art. 2Âº - "SÃ£o feriados religiosos os dias de guarda, declarados em lei municipal, de acordo com a tradiÃ§Ã£o local e em nÃºmero nÃ£o superior a quatro, neste incluÃ­da a Sexta-Feira da PaixÃ£o."
+          * <strong>Paixão de Cristo:</strong> Feriado religioso conforme Lei Federal nº 9.093/95, Art. 2º - "São feriados religiosos os dias de guarda, declarados em lei municipal, de acordo com a tradição local e em número não superior a quatro, neste incluída a Sexta-Feira da Paixão."
         </p>
       </div>
 
@@ -868,8 +868,8 @@ const App = () => {
           <div className="flex items-center gap-4">
             <div className="p-4 bg-indigo-600 rounded-3xl text-white shadow-xl shadow-indigo-100"><LayoutDashboard size={32} /></div>
             <div>
-              <h1 className="text-3xl font-black text-slate-800 tracking-tight">Escala de PlantÃ£o 2026</h1>
-              <p className="text-slate-500 font-medium">GestÃ£o Integrada de PlantÃµes e FÃ©rias</p>
+              <h1 className="text-3xl font-black text-slate-800 tracking-tight">Escala de Plantão 2026</h1>
+              <p className="text-slate-500 font-medium">Gestão Integrada de Plantões e Férias</p>
               <p className="text-slate-400 text-xs font-medium mt-1">Última atualização da escala (Brasília): {ULTIMA_ATUALIZACAO_ESCALA}</p>
             </div>
           </div>
@@ -881,7 +881,7 @@ const App = () => {
         </div>
         <div className="flex flex-wrap bg-white p-1.5 rounded-2xl shadow-sm border border-slate-200 mb-8">
           <button onClick={() => setActiveTab('escala')} className={`flex-1 md:flex-none px-6 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 ${activeTab === 'escala' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-50'}`}><Briefcase size={16} /> Escala</button>
-          <button onClick={() => setActiveTab('ferias')} className={`flex-1 md:flex-none px-6 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 ${activeTab === 'ferias' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-50'}`}><Palmtree size={16} /> FÃ©rias/Indisponibilidade</button>
+          <button onClick={() => setActiveTab('ferias')} className={`flex-1 md:flex-none px-6 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 ${activeTab === 'ferias' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-50'}`}><Palmtree size={16} /> Férias/Indisponibilidade</button>
           <button onClick={() => setActiveTab('feriados')} className={`flex-1 md:flex-none px-6 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 ${activeTab === 'feriados' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-50'}`}><Flag size={16} /> Feriados/Portaria</button>
         </div>
         <div className="animate-in fade-in duration-500">
