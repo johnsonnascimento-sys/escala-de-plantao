@@ -2,9 +2,9 @@ import React from 'react';
 import './Layout.css';
 import { LayoutDashboard, Users, FileText, Settings, LogOut } from 'lucide-react';
 
-const SidebarItem = ({ icon: Icon, label, active }) => (
+const SidebarItem = ({ icon, label, active }) => (
     <div className={`sidebar-item ${active ? 'active' : ''}`}>
-        <Icon size={20} />
+        {React.createElement(icon, { size: 20 })}
         <span>{label}</span>
     </div>
 );
