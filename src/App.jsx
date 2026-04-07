@@ -23,6 +23,7 @@ import {
 } from "lucide-react";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
+import AdminDrawPanel from "./components/AdminDrawPanel";
 import AdminLogin from "./components/AdminLogin";
 import AdminUsersPanel from "./components/AdminUsersPanel";
 import PlantaoCard from "./components/PlantaoCard";
@@ -209,6 +210,10 @@ const App = () => {
   const [savingAdminUser, setSavingAdminUser] = useState(false);
   const [userForm, setUserForm] = useState(createUserForm());
   const [userMessage, setUserMessage] = useState("");
+  const [selectedDrawDate, setSelectedDrawDate] = useState("");
+  const [eligibleServers, setEligibleServers] = useState([]);
+  const [drawMessage, setDrawMessage] = useState("");
+  const [drawing, setDrawing] = useState(false);
 
   useEffect(() => {
     if (!hasSupabaseConfig) return undefined;
@@ -264,6 +269,14 @@ const App = () => {
     () => escalaTotal.filter((item) => Number(item.data.split("-")[1]) === adminFilterMonth + 1 && (!adminDateFilter || item.data === adminDateFilter)),
     [adminDateFilter, adminFilterMonth, escalaTotal],
   );
+  const selectedPendingShift = useMemo(() => plantoesPendentes.find((item) => item.data === selectedDrawDate) || null, [plantoesPendentes, selectedDrawDate]);
+
+  const buildEligibleServers = (date, preservedSelection = []) =>
+    servidores.map((servidor) => ({
+      nome: servidor.nome,
+      warning: getDisponibilidadeMensagem(servidores, servidor.nome, date),
+      selected: preservedSelection.length > 0 ? preservedSelection.includes(servidor.nome) : !getDisponibilidadeMensagem(servidores, servidor.nome, date),
+    }));
 
   const exportToPDF = () => {
     const doc = new jsPDF("p", "mm", "a4");
@@ -312,6 +325,13 @@ const App = () => {
     doc.save("Escala_Plantao_2026_Consolidada.pdf");
   };
 
+  const upsertOverride = async (payload, overrideId = null) => {
+    const query = overrideId
+      ? supabase.from("shift_overrides").update(payload).eq("id", overrideId).select().single()
+      : supabase.from("shift_overrides").insert(payload).select().single();
+    return query;
+  };
+
   const saveOverride = async () => {
     if (!session) return setFormMessage("Faca login para salvar overrides.");
     const validationError = validateOverride(formState, escalaBase);
@@ -328,10 +348,7 @@ const App = () => {
       notes: formState.notes.trim(),
       created_by: session.user.id,
     };
-    const query = formState.id
-      ? supabase.from("shift_overrides").update(payload).eq("id", formState.id).select().single()
-      : supabase.from("shift_overrides").insert(payload).select().single();
-    const { data, error } = await query;
+    const { data, error } = await upsertOverride(payload, formState.id);
     setSavingOverride(false);
     if (error) return setFormMessage(error.message);
     setOverrides((current) => [...current.filter((item) => item.id !== data.id), data].sort((a, b) => a.date.localeCompare(b.date)));
@@ -396,6 +413,48 @@ const App = () => {
     setAdminUsers((current) => current.filter((item) => item.id !== userId));
     if (userForm.id === userId) setUserForm(createUserForm());
     setUserMessage("Usuario excluido com sucesso.");
+  };
+
+  const toggleEligibleServer = (nome) => {
+    setEligibleServers((current) => current.map((item) => (item.nome === nome ? { ...item, selected: !item.selected } : item)));
+  };
+
+  const resetDefaultEligibleServers = () => {
+    if (!selectedPendingShift) return;
+    setEligibleServers(buildEligibleServers(selectedPendingShift.data));
+  };
+
+  const selectPendingShift = (plantao) => {
+    setSelectedDrawDate(plantao.data);
+    setEligibleServers(buildEligibleServers(plantao.data));
+    setDrawMessage("");
+  };
+
+  const runDraw = async () => {
+    if (!session || !selectedPendingShift) return setDrawMessage("Selecione um plantao pendente para sortear.");
+    const participantes = eligibleServers.filter((item) => item.selected);
+    if (participantes.length === 0) return setDrawMessage("Selecione ao menos um servidor para participar do sorteio.");
+
+    setDrawing(true);
+    setDrawMessage("");
+    const sorteado = participantes[Math.floor(Math.random() * participantes.length)];
+    const payload = {
+      date: selectedPendingShift.data,
+      mode: "replace",
+      judge_name: selectedPendingShift.juiz,
+      server_name: sorteado.nome,
+      desc: selectedPendingShift.desc,
+      tipo: selectedPendingShift.tipo,
+      notes: `Sorteio realizado entre: ${participantes.map((item) => item.nome).join(", ")}. Sorteado: ${sorteado.nome}.`,
+      created_by: session.user.id,
+    };
+    const { data, error } = await upsertOverride(payload, selectedPendingShift.overrideId || null);
+    setDrawing(false);
+    if (error) return setDrawMessage(error.message);
+    setOverrides((current) => [...current.filter((item) => item.id !== data.id), data].sort((a, b) => a.date.localeCompare(b.date)));
+    setDrawMessage(`Sorteio concluido. Servidor sorteado: ${sorteado.nome}.`);
+    setSelectedDrawDate("");
+    setEligibleServers([]);
   };
 
   const handleLogin = async (event) => {
@@ -466,26 +525,31 @@ const App = () => {
           {activeTab === "feriados" && <TabFeriados />}
           {activeTab === "admin" && session && (
             <>
-            <div className={`${adminSection === "schedule" ? "grid grid-cols-1 xl:grid-cols-[1.15fr_0.85fr] gap-6" : "hidden"}`}>
-              <div className="space-y-6">
-                <div className="bg-white rounded-3xl border border-slate-200 p-5 shadow-sm flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-                  <div>
-                    <p className="text-[11px] font-black uppercase tracking-[0.2em] text-indigo-600">Painel administrativo</p>
-                    <h2 className="text-2xl font-black text-slate-800">{adminSection === "schedule" ? "Edicao da escala" : "CRUD de usuarios e senha"}</h2>
-                    <p className="text-sm text-slate-500">Usuario autenticado: {session.user.email}</p>
-                  </div>
-                  <div className="flex gap-2">
-                    <button onClick={() => setAdminSection("schedule")} className={`rounded-2xl px-4 py-3 text-sm font-bold flex items-center gap-2 ${adminSection === "schedule" ? "bg-indigo-600 text-white" : "border border-slate-200 text-slate-600 hover:bg-slate-50"}`}>
-                      <Calendar size={16} /> Escala
-                    </button>
-                    <button onClick={() => setAdminSection("users")} className={`rounded-2xl px-4 py-3 text-sm font-bold flex items-center gap-2 ${adminSection === "users" ? "bg-slate-900 text-white" : "border border-slate-200 text-slate-600 hover:bg-slate-50"}`}>
-                      <UserCog size={16} /> Usuarios
-                    </button>
-                    <button onClick={() => supabase.auth.signOut().then(() => { setFormState(createEmptyForm()); setUserForm(createUserForm()); setActiveTab("escala"); })} className="rounded-2xl border border-slate-200 px-4 py-3 text-sm font-bold text-slate-600 hover:bg-slate-50 flex items-center gap-2">
-                      <LogOut size={16} /> Sair
-                    </button>
-                  </div>
+              <div className="bg-white rounded-3xl border border-slate-200 p-5 shadow-sm flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                <div>
+                  <p className="text-[11px] font-black uppercase tracking-[0.2em] text-indigo-600">Painel administrativo</p>
+                  <h2 className="text-2xl font-black text-slate-800">{adminSection === "schedule" ? "Edicao da escala" : adminSection === "draw" ? "Ferramenta de sorteio" : "CRUD de usuarios e senha"}</h2>
+                  <p className="text-sm text-slate-500">Usuario autenticado: {session.user.email}</p>
                 </div>
+                <div className="flex gap-2 flex-wrap">
+                  <button onClick={() => setAdminSection("schedule")} className={`rounded-2xl px-4 py-3 text-sm font-bold flex items-center gap-2 ${adminSection === "schedule" ? "bg-indigo-600 text-white" : "border border-slate-200 text-slate-600 hover:bg-slate-50"}`}>
+                    <Calendar size={16} /> Escala
+                  </button>
+                  <button onClick={() => setAdminSection("draw")} className={`rounded-2xl px-4 py-3 text-sm font-bold flex items-center gap-2 ${adminSection === "draw" ? "bg-amber-500 text-white" : "border border-slate-200 text-slate-600 hover:bg-slate-50"}`}>
+                    <Users size={16} /> Sorteio
+                  </button>
+                  <button onClick={() => setAdminSection("users")} className={`rounded-2xl px-4 py-3 text-sm font-bold flex items-center gap-2 ${adminSection === "users" ? "bg-slate-900 text-white" : "border border-slate-200 text-slate-600 hover:bg-slate-50"}`}>
+                    <UserCog size={16} /> Usuarios
+                  </button>
+                  <button onClick={() => supabase.auth.signOut().then(() => { setFormState(createEmptyForm()); setUserForm(createUserForm()); setSelectedDrawDate(""); setEligibleServers([]); setActiveTab("escala"); })} className="rounded-2xl border border-slate-200 px-4 py-3 text-sm font-bold text-slate-600 hover:bg-slate-50 flex items-center gap-2">
+                    <LogOut size={16} /> Sair
+                  </button>
+                </div>
+              </div>
+
+            {adminSection === "schedule" && (
+            <div className="grid grid-cols-1 xl:grid-cols-[1.15fr_0.85fr] gap-6">
+              <div className="space-y-6">
 
                 <div className="bg-white rounded-3xl border border-slate-200 p-5 shadow-sm space-y-4">
                   <div className="flex items-center gap-3">
@@ -577,6 +641,7 @@ const App = () => {
                 </div>
               </div>
             </div>
+            )}
             {adminSection === "users" && (
               <AdminUsersPanel
                 adminUsers={adminUsers}
@@ -588,6 +653,20 @@ const App = () => {
                 savingAdminUser={savingAdminUser}
                 resetUserForm={() => { setUserForm(createUserForm()); setUserMessage(""); }}
                 deleteAdminUser={deleteAdminUser}
+              />
+            )}
+            {adminSection === "draw" && (
+              <AdminDrawPanel
+                pendingShifts={plantoesPendentes}
+                selectedPendingShift={selectedPendingShift}
+                selectedDrawDate={selectedDrawDate}
+                selectPendingShift={selectPendingShift}
+                eligibleServers={eligibleServers}
+                toggleEligibleServer={toggleEligibleServer}
+                defaultEligibleServers={resetDefaultEligibleServers}
+                drawMessage={drawMessage}
+                runDraw={runDraw}
+                drawing={drawing}
               />
             )}
             </>
