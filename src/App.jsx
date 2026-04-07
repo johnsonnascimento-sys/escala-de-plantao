@@ -26,12 +26,13 @@ import autoTable from "jspdf-autotable";
 import AdminLogin from "./components/AdminLogin";
 import AdminUsersPanel from "./components/AdminUsersPanel";
 import PlantaoCard from "./components/PlantaoCard";
-import { NOMES_MESES, feriadosPortaria, plantoesBase, servidores } from "./data/scheduleData";
+import { NOMES_MESES, SERVIDOR_A_DEFINIR, feriadosPortaria, plantoesBase, servidores } from "./data/scheduleData";
 import {
   applyOverrides,
   buildBaseSchedule,
   formatDateBr,
   getDisponibilidadeMensagem,
+  isPlantaoPendente,
   getStatsGlobais,
   validateOverride,
 } from "./lib/schedule";
@@ -62,6 +63,7 @@ const TabEscala = ({ servidorSelecionado, setServidorSelecionado, mesAtivo, setM
       <div className="flex items-center gap-2 text-slate-400 overflow-x-auto w-full no-scrollbar pb-2 md:pb-0">
         <Filter size={16} />
         <button onClick={() => setServidorSelecionado("Todos")} className={`px-4 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap ${servidorSelecionado === "Todos" ? "bg-indigo-600 text-white shadow-md" : "bg-slate-50 text-slate-500 hover:bg-slate-100"}`}>TODOS</button>
+        <button onClick={() => setServidorSelecionado(SERVIDOR_A_DEFINIR)} className={`px-4 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap ${servidorSelecionado === SERVIDOR_A_DEFINIR ? "bg-amber-500 text-white shadow-md" : "bg-amber-50 text-amber-700 hover:bg-amber-100"}`}>A DEFINIR</button>
         {servidores.map((servidor) => (
           <button key={servidor.nome} onClick={() => setServidorSelecionado(servidor.nome)} className={`px-4 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap ${servidorSelecionado === servidor.nome ? "bg-indigo-600 text-white shadow-md" : "bg-slate-50 text-slate-500 hover:bg-slate-100"}`}>
             {servidor.nome.split(" ")[0]}
@@ -114,9 +116,10 @@ const TabEscala = ({ servidorSelecionado, setServidorSelecionado, mesAtivo, setM
         </div>
         <div className="bg-slate-900 rounded-3xl p-5 text-slate-300 text-[10px] space-y-3">
           <h3 className="font-bold text-white text-xs flex items-center gap-2"><CheckCircle2 size={14} className="text-emerald-400" /> Regras ativas</h3>
-          <p>• Claudia apenas Janeiro.</p>
-          <p>• Equidade: Sabado = 3, Domingo/Feriado = 4.</p>
-          <p>• Overrides manuais substituem a escala base quando cadastrados.</p>
+          <p>Claudia apenas Janeiro.</p>
+          <p>Equidade: Sabado = 3, Domingo/Feriado = 4.</p>
+          <p>Andre Luis fica fora do plantao entre 13/04 e 14/08/2026; nesses casos a escala fica a definir por sorteio.</p>
+          <p>Overrides manuais substituem a escala base quando cadastrados.</p>
         </div>
       </div>
     </div>
@@ -251,8 +254,11 @@ const App = () => {
 
   const plantoesFiltrados = useMemo(() => {
     if (servidorSelecionado === "Todos") return escalaTotal.filter((item) => Number(item.data.split("-")[1]) === mesAtivo + 1);
+    if (servidorSelecionado === SERVIDOR_A_DEFINIR) return escalaTotal.filter((item) => item.servidor === SERVIDOR_A_DEFINIR);
     return escalaTotal.filter((item) => item.servidor === servidorSelecionado);
   }, [escalaTotal, mesAtivo, servidorSelecionado]);
+
+  const plantoesPendentes = useMemo(() => escalaTotal.filter((item) => isPlantaoPendente(item)), [escalaTotal]);
 
   const adminItems = useMemo(
     () => escalaTotal.filter((item) => Number(item.data.split("-")[1]) === adminFilterMonth + 1 && (!adminDateFilter || item.data === adminDateFilter)),
@@ -275,6 +281,20 @@ const App = () => {
       headStyles: { fillColor: [79, 70, 229], textColor: 255, fontStyle: "bold" },
       bodyStyles: { fontSize: 8 },
     });
+    if (plantoesPendentes.length > 0) {
+      doc.addPage();
+      doc.setFontSize(18);
+      doc.text("Plantoes pendentes de sorteio", margin, 18);
+      autoTable(doc, {
+        startY: 26,
+        margin: { left: margin, right: margin },
+        head: [["Data", "Descricao", "Magistrado", "Observacao"]],
+        body: plantoesPendentes.map((plantao) => [formatDateBr(plantao.data), plantao.desc, plantao.juiz, plantao.notes || SERVIDOR_A_DEFINIR]),
+        theme: "grid",
+        headStyles: { fillColor: [217, 119, 6], textColor: 255, fontStyle: "bold" },
+        bodyStyles: { fontSize: 8 },
+      });
+    }
     doc.addPage();
     doc.setFontSize(18);
     doc.text("Balanco geral consolidado", margin, 18);

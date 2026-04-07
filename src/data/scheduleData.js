@@ -2,6 +2,8 @@ export const PTS_SABADO = 3;
 export const PTS_DOM_FERIADO = 4;
 export const VALOR_SABADO = 582.53;
 export const VALOR_DOM_FERIADO = 776.7;
+export const SERVIDOR_A_DEFINIR = "A DEFINIR (SORTEIO)";
+export const MOTIVO_SORTEIO_ANDRE = "Andre Luis indisponivel para plantao entre 13/04/2026 e 14/08/2026. Escala pendente de sorteio.";
 
 export const NOMES_MESES = [
   "Janeiro",
@@ -24,6 +26,7 @@ export const servidores = [
     janOnly: false,
     ferias: [["2026-01-07", "2026-02-04"], ["2026-02-05", "2026-02-13"], ["2026-02-19", "2026-02-27"]],
     impedimentos: [["2026-02-16", "2026-02-17"]],
+    indisponibilidadesPlantao: [["2026-04-13", "2026-08-14"]],
   },
   { nome: "CLAUDIA MARIA", janOnly: true, ferias: [["2026-01-19", "2026-01-23"]], impedimentos: [] },
   {

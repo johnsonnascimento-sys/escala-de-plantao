@@ -1,7 +1,11 @@
-import { Shield, User } from "lucide-react";
+import { AlertCircle, Shield, User } from "lucide-react";
+import { SERVIDOR_A_DEFINIR } from "../data/scheduleData";
 
-const PlantaoCard = ({ plantao, servidorSelecionado = "Todos", onEdit }) => (
-  <div className="bg-white rounded-2xl p-5 border border-slate-200 flex items-center gap-6 group hover:border-indigo-300 transition-colors">
+const PlantaoCard = ({ plantao, servidorSelecionado = "Todos", onEdit }) => {
+  const isPendente = plantao.servidor === SERVIDOR_A_DEFINIR;
+
+  return (
+  <div className={`bg-white rounded-2xl p-5 border flex items-center gap-6 group transition-colors ${isPendente ? "border-amber-300 hover:border-amber-400" : "border-slate-200 hover:border-indigo-300"}`}>
     <div className="text-center md:border-r border-slate-100 md:pr-6 min-w-[78px]">
       <span className="block text-2xl font-black text-slate-800 leading-none">{plantao.data.split("-")[2]}</span>
       <span className="text-[10px] font-bold text-slate-400 uppercase">
@@ -16,12 +20,12 @@ const PlantaoCard = ({ plantao, servidorSelecionado = "Todos", onEdit }) => (
           <span className="font-semibold text-slate-700 text-xs">{plantao.juiz}</span>
         </div>
       </div>
-      <div className="p-2.5 rounded-xl flex items-center gap-3 border bg-emerald-50 border-emerald-100">
-        <User size={16} className="text-emerald-500" />
+      <div className={`p-2.5 rounded-xl flex items-center gap-3 border ${isPendente ? "bg-amber-50 border-amber-200" : "bg-emerald-50 border-emerald-100"}`}>
+        {isPendente ? <AlertCircle size={16} className="text-amber-600" /> : <User size={16} className="text-emerald-500" />}
         <div className="flex-1">
           <span className="text-[9px] text-slate-400 font-bold uppercase block">Servidor(a)</span>
-          <span className="font-semibold text-xs text-emerald-800">{plantao.servidor}</span>
-          {plantao.notes && <p className="text-[10px] text-emerald-700 mt-1">{plantao.notes}</p>}
+          <span className={`font-semibold text-xs ${isPendente ? "text-amber-800" : "text-emerald-800"}`}>{plantao.servidor}</span>
+          {plantao.notes && <p className={`text-[10px] mt-1 ${isPendente ? "text-amber-700" : "text-emerald-700"}`}>{plantao.notes}</p>}
         </div>
         <div className="text-right">
           <span className="block text-xs font-bold text-slate-500">{plantao.pontos} pts</span>
@@ -37,6 +41,7 @@ const PlantaoCard = ({ plantao, servidorSelecionado = "Todos", onEdit }) => (
       </button>
     )}
   </div>
-);
+  );
+};
 
 export default PlantaoCard;

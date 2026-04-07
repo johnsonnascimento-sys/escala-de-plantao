@@ -1,6 +1,8 @@
 import {
+  MOTIVO_SORTEIO_ANDRE,
   PTS_DOM_FERIADO,
   PTS_SABADO,
+  SERVIDOR_A_DEFINIR,
   VALOR_DOM_FERIADO,
   VALOR_SABADO,
 } from "../data/scheduleData";
@@ -37,6 +39,9 @@ export const isEmFerias = (servidor, dataPlantaoStr) =>
 export const isImpedido = (servidor, dataPlantaoStr) =>
   (servidor.impedimentos || []).some(([inicio, fim]) => isDateBetween(dataPlantaoStr, inicio, fim));
 
+export const isIndisponivelPlantao = (servidor, dataPlantaoStr) =>
+  (servidor.indisponibilidadesPlantao || []).some(([inicio, fim]) => isDateBetween(dataPlantaoStr, inicio, fim));
+
 export const getServidorByNome = (servidores, nome) =>
   servidores.find((servidor) => normalizeText(servidor.nome) === normalizeText(nome));
 
@@ -45,6 +50,7 @@ export const getDisponibilidadeMensagem = (servidores, nome, data) => {
   if (!servidor) return null;
   if (isEmFerias(servidor, data)) return `${servidor.nome} esta de ferias nesta data.`;
   if (isImpedido(servidor, data)) return `${servidor.nome} possui impedimento/recusa nesta data.`;
+  if (isIndisponivelPlantao(servidor, data)) return `${servidor.nome} esta temporariamente fora da escala e este dia deve ficar a definir por sorteio.`;
   if (servidor.janOnly && Number(data.split("-")[1]) !== 1) {
     return `${servidor.nome} esta restrito(a) a Janeiro.`;
   }
@@ -61,6 +67,15 @@ export const buildBaseSchedule = (plantoesBase, servidores) => {
     const { pontos, valor } = getPlantaoMeta(plantao.tipo);
     const mes = Number(plantao.data.split("-")[1]) - 1;
     let servidorEscolhido = plantao.fixo || null;
+    let notes = "";
+
+    if (plantao.fixo) {
+      const servidorFixo = getServidorByNome(servidores, plantao.fixo);
+      if (servidorFixo && isIndisponivelPlantao(servidorFixo, plantao.data)) {
+        servidorEscolhido = SERVIDOR_A_DEFINIR;
+        notes = MOTIVO_SORTEIO_ANDRE;
+      }
+    }
 
     if (!servidorEscolhido) {
       const disponiveis = servidores
@@ -68,6 +83,7 @@ export const buildBaseSchedule = (plantoesBase, servidores) => {
           if (servidor.janOnly && mes !== 0) return false;
           if (isEmFerias(servidor, plantao.data)) return false;
           if (isImpedido(servidor, plantao.data)) return false;
+          if (isIndisponivelPlantao(servidor, plantao.data)) return false;
           return true;
         })
         .sort((a, b) => {
@@ -89,7 +105,7 @@ export const buildBaseSchedule = (plantoesBase, servidores) => {
       pontos,
       valor,
       origem: "base",
-      notes: "",
+      notes,
     };
   });
 };
@@ -151,6 +167,9 @@ export const applyOverrides = (baseSchedule, overrides) => {
 
 export const getStatsGlobais = (escala) =>
   escala.reduce((acc, plantao) => {
+    if (plantao.servidor === SERVIDOR_A_DEFINIR || plantao.servidor === "Nenhum Disponivel") {
+      return acc;
+    }
     if (!acc[plantao.servidor]) {
       acc[plantao.servidor] = { dias: 0, pontos: 0, valor: 0 };
     }
@@ -184,3 +203,5 @@ export const validateOverride = ({ mode, date, judge_name, server_name, desc, ti
 
   return null;
 };
+
+export const isPlantaoPendente = (plantao) => plantao.servidor === SERVIDOR_A_DEFINIR;

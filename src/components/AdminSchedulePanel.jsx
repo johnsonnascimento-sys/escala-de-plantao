@@ -1,5 +1,5 @@
 import { AlertCircle, Calendar, PencilLine, PlusCircle, Save } from "lucide-react";
-import { NOMES_MESES, servidores } from "../data/scheduleData";
+import { NOMES_MESES, SERVIDOR_A_DEFINIR, servidores } from "../data/scheduleData";
 import PlantaoCard from "./PlantaoCard";
 
 const AdminSchedulePanel = ({
@@ -69,6 +69,7 @@ const AdminSchedulePanel = ({
             Servidor
             <select className="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-indigo-500" value={formState.server_name} onChange={(event) => setFormState((current) => ({ ...current, server_name: event.target.value }))}>
               <option value="">Selecione</option>
+              <option value={SERVIDOR_A_DEFINIR}>{SERVIDOR_A_DEFINIR}</option>
               {servidores.map((servidor) => <option key={servidor.nome} value={servidor.nome}>{servidor.nome}</option>)}
             </select>
           </label>
