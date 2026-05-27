@@ -20,7 +20,7 @@ export const NOMES_MESES = [
   "Dezembro",
 ];
 
-export const servidores = [
+export const defaultServidores = [
   {
     nome: "ANDRE LUIS",
     janOnly: false,
@@ -64,7 +64,15 @@ export const servidores = [
     ferias: [["2026-03-02", "2026-03-10"], ["2026-06-29", "2026-07-08"], ["2026-10-13", "2026-10-21"], ["2026-11-09", "2026-11-19"]],
     impedimentos: [],
   },
+  {
+    nome: "PAULA DAVERIO",
+    janOnly: false,
+    ferias: [],
+    impedimentos: [],
+  },
 ];
+
+export const servidores = defaultServidores;
 
 export const plantoesBase = [
   { data: "2026-01-10", juiz: "Dra. Vera", desc: "Sabado", tipo: "SAB", fixo: "CLAUDIA MARIA" },

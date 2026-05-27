@@ -1,5 +1,5 @@
 import { AlertCircle, Calendar, PencilLine, PlusCircle, Save } from "lucide-react";
-import { NOMES_MESES, SERVIDOR_A_DEFINIR, servidores } from "../data/scheduleData";
+import { NOMES_MESES, SERVIDOR_A_DEFINIR } from "../data/scheduleData";
 import PlantaoCard from "./PlantaoCard";
 
 const AdminSchedulePanel = ({
@@ -16,6 +16,7 @@ const AdminSchedulePanel = ({
   saveOverride,
   savingOverride,
   resetOverrideForm,
+  servidores,
 }) => (
   <div className="grid grid-cols-1 xl:grid-cols-[1.15fr_0.85fr] gap-6">
     <div className="space-y-6">

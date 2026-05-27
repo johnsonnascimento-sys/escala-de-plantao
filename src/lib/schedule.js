@@ -34,7 +34,7 @@ export const isDateBetween = (target, start, end) => {
 };
 
 export const isEmFerias = (servidor, dataPlantaoStr) =>
-  servidor.ferias.some(([inicio, fim]) => isDateBetween(dataPlantaoStr, inicio, fim));
+  (servidor.ferias || []).some(([inicio, fim]) => isDateBetween(dataPlantaoStr, inicio, fim));
 
 export const isImpedido = (servidor, dataPlantaoStr) =>
   (servidor.impedimentos || []).some(([inicio, fim]) => isDateBetween(dataPlantaoStr, inicio, fim));
@@ -48,6 +48,7 @@ export const getServidorByNome = (servidores, nome) =>
 export const getDisponibilidadeMensagem = (servidores, nome, data) => {
   const servidor = getServidorByNome(servidores, nome);
   if (!servidor) return null;
+  if (servidor.active === false) return `${servidor.nome} esta inativo(a) e nao participa da escala automatica.`;
   if (isEmFerias(servidor, data)) return `${servidor.nome} esta de ferias nesta data.`;
   if (isImpedido(servidor, data)) return `${servidor.nome} possui impedimento/recusa nesta data.`;
   if (isIndisponivelPlantao(servidor, data)) return `${servidor.nome} esta temporariamente fora da escala e este dia deve ficar a definir por sorteio.`;
@@ -71,7 +72,7 @@ export const buildBaseSchedule = (plantoesBase, servidores) => {
 
     if (plantao.fixo) {
       const servidorFixo = getServidorByNome(servidores, plantao.fixo);
-      if (servidorFixo && isIndisponivelPlantao(servidorFixo, plantao.data)) {
+      if (servidorFixo && (servidorFixo.active === false || isIndisponivelPlantao(servidorFixo, plantao.data))) {
         servidorEscolhido = SERVIDOR_A_DEFINIR;
         notes = MOTIVO_SORTEIO_ANDRE;
       }
@@ -80,6 +81,7 @@ export const buildBaseSchedule = (plantoesBase, servidores) => {
     if (!servidorEscolhido) {
       const disponiveis = servidores
         .filter((servidor) => {
+          if (servidor.active === false) return false;
           if (servidor.janOnly && mes !== 0) return false;
           if (isEmFerias(servidor, plantao.data)) return false;
           if (isImpedido(servidor, plantao.data)) return false;

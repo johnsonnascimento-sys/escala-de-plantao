@@ -27,7 +27,8 @@ import AdminDrawPanel from "./components/AdminDrawPanel";
 import AdminLogin from "./components/AdminLogin";
 import AdminUsersPanel from "./components/AdminUsersPanel";
 import PlantaoCard from "./components/PlantaoCard";
-import { NOMES_MESES, SERVIDOR_A_DEFINIR, feriadosPortaria, plantoesBase, servidores } from "./data/scheduleData";
+import AdminServersPanel from "./components/AdminServersPanel";
+import { NOMES_MESES, SERVIDOR_A_DEFINIR, feriadosPortaria, plantoesBase, defaultServidores } from "./data/scheduleData";
 import {
   applyOverrides,
   buildBaseSchedule,
@@ -37,6 +38,7 @@ import {
   getStatsGlobais,
   validateOverride,
 } from "./lib/schedule";
+import { mergeServerLists, normalizeServerName, normalizeServerRecord, parseDateRanges, serverToFormState } from "./lib/servers";
 import { hasSupabaseConfig, supabase } from "./lib/supabase";
 
 const createEmptyForm = () => ({
@@ -58,7 +60,9 @@ const createUserForm = () => ({
   active: true,
 });
 
-const TabEscala = ({ servidorSelecionado, setServidorSelecionado, mesAtivo, setMesAtivo, plantoesFiltrados, statsGlobais }) => (
+const createServerForm = () => serverToFormState();
+
+const TabEscala = ({ servidores, servidorSelecionado, setServidorSelecionado, mesAtivo, setMesAtivo, plantoesFiltrados, statsGlobais }) => (
   <div className="space-y-6">
     <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white p-4 rounded-2xl shadow-sm border border-slate-100">
       <div className="flex items-center gap-2 text-slate-400 overflow-x-auto w-full no-scrollbar pb-2 md:pb-0">
@@ -127,7 +131,7 @@ const TabEscala = ({ servidorSelecionado, setServidorSelecionado, mesAtivo, setM
   </div>
 );
 
-const TabFerias = () => (
+const TabFerias = ({ servidores }) => (
   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
     {servidores.map((servidor) => (
       <div key={servidor.nome} className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
@@ -205,6 +209,11 @@ const App = () => {
   const [adminFilterMonth, setAdminFilterMonth] = useState(new Date().getMonth());
   const [adminDateFilter, setAdminDateFilter] = useState("");
   const [adminSection, setAdminSection] = useState("schedule");
+  const [serverRows, setServerRows] = useState([]);
+  const [loadingServers, setLoadingServers] = useState(false);
+  const [savingServer, setSavingServer] = useState(false);
+  const [serverForm, setServerForm] = useState(createServerForm());
+  const [serverMessage, setServerMessage] = useState("");
   const [adminUsers, setAdminUsers] = useState([]);
   const [loadingAdminUsers, setLoadingAdminUsers] = useState(false);
   const [savingAdminUser, setSavingAdminUser] = useState(false);
@@ -220,6 +229,21 @@ const App = () => {
     supabase.auth.getSession().then(({ data }) => setSession(data.session ?? null));
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, nextSession) => setSession(nextSession));
     return () => subscription.unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    if (!hasSupabaseConfig) return;
+    const loadServers = async () => {
+      setLoadingServers(true);
+      const { data, error } = await supabase.from("schedule_servers").select("*").order("nome", { ascending: true });
+      setLoadingServers(false);
+      if (error) {
+        setServerMessage(`Nao foi possivel carregar servidores: ${error.message}`);
+        return;
+      }
+      setServerRows((data || []).map(normalizeServerRecord));
+    };
+    loadServers();
   }, []);
 
   useEffect(() => {
@@ -252,10 +276,11 @@ const App = () => {
     loadAdminUsers();
   }, [session]);
 
-  const escalaBase = useMemo(() => buildBaseSchedule(plantoesBase, servidores), []);
+  const servidores = useMemo(() => mergeServerLists(defaultServidores, serverRows), [serverRows]);
+  const escalaBase = useMemo(() => buildBaseSchedule(plantoesBase, servidores), [servidores]);
   const escalaTotal = useMemo(() => applyOverrides(escalaBase, overrides), [escalaBase, overrides]);
   const statsGlobais = useMemo(() => getStatsGlobais(escalaTotal), [escalaTotal]);
-  const warningMessage = useMemo(() => getDisponibilidadeMensagem(servidores, formState.server_name, formState.date), [formState.server_name, formState.date]);
+  const warningMessage = useMemo(() => getDisponibilidadeMensagem(servidores, formState.server_name, formState.date), [servidores, formState.server_name, formState.date]);
 
   const plantoesFiltrados = useMemo(() => {
     if (servidorSelecionado === "Todos") return escalaTotal.filter((item) => Number(item.data.split("-")[1]) === mesAtivo + 1);
@@ -272,7 +297,7 @@ const App = () => {
   const selectedPendingShift = useMemo(() => plantoesPendentes.find((item) => item.data === selectedDrawDate) || null, [plantoesPendentes, selectedDrawDate]);
 
   const buildEligibleServers = (date, preservedSelection = []) =>
-    servidores.map((servidor) => ({
+    servidores.filter((servidor) => servidor.active !== false).map((servidor) => ({
       nome: servidor.nome,
       warning: getDisponibilidadeMensagem(servidores, servidor.nome, date),
       selected: preservedSelection.length > 0 ? preservedSelection.includes(servidor.nome) : !getDisponibilidadeMensagem(servidores, servidor.nome, date),
@@ -330,6 +355,66 @@ const App = () => {
       ? supabase.from("shift_overrides").update(payload).eq("id", overrideId).select().single()
       : supabase.from("shift_overrides").insert(payload).select().single();
     return query;
+  };
+
+  const resetServerForm = () => {
+    setServerForm(createServerForm());
+    setServerMessage("");
+  };
+
+  const saveServer = async () => {
+    if (!session) return setServerMessage("Faca login para cadastrar servidores.");
+    const nome = normalizeServerName(serverForm.nome);
+    if (!nome) return setServerMessage("Informe o nome do servidor.");
+
+    const ferias = parseDateRanges(serverForm.feriasText);
+    const impedimentos = parseDateRanges(serverForm.impedimentosText);
+    const indisponibilidadesPlantao = parseDateRanges(serverForm.indisponibilidadesPlantaoText);
+    const invalidLines = [...ferias.invalidLines, ...impedimentos.invalidLines, ...indisponibilidadesPlantao.invalidLines];
+    if (invalidLines.length > 0) {
+      return setServerMessage(`Corrija os intervalos invalidos: ${invalidLines.join(" | ")}`);
+    }
+
+    setSavingServer(true);
+    setServerMessage("");
+
+    const payload = {
+      nome,
+      jan_only: serverForm.janOnly,
+      ferias: ferias.ranges,
+      impedimentos: impedimentos.ranges,
+      indisponibilidades_plantao: indisponibilidadesPlantao.ranges,
+      active: serverForm.active,
+    };
+
+    const query = serverForm.id
+      ? supabase.from("schedule_servers").update(payload).eq("id", serverForm.id).select().single()
+      : supabase.from("schedule_servers").insert({ ...payload, created_by: session.user.id }).select().single();
+
+    const { data, error } = await query;
+    setSavingServer(false);
+    if (error) return setServerMessage(error.message);
+
+    const savedServer = normalizeServerRecord(data);
+    setServerRows((current) => {
+      const next = current.filter((item) => item.id !== savedServer.id && normalizeServerName(item.nome) !== normalizeServerName(savedServer.nome));
+      return [...next, savedServer].sort((a, b) => a.nome.localeCompare(b.nome));
+    });
+    setServerForm(createServerForm());
+    setServerMessage("Servidor salvo com sucesso.");
+  };
+
+  const deleteServer = async (server) => {
+    if (!server.id) {
+      return setServerMessage("Este servidor faz parte da base padrao. Edite-o para criar uma sobreposicao ou crie um novo registro.");
+    }
+
+    if (!session) return setServerMessage("Faca login para remover servidores.");
+    const { error } = await supabase.from("schedule_servers").delete().eq("id", server.id);
+    if (error) return setServerMessage(error.message);
+    setServerRows((current) => current.filter((item) => item.id !== server.id));
+    if (serverForm.id === server.id) resetServerForm();
+    setServerMessage("Servidor removido com sucesso.");
   };
 
   const saveOverride = async () => {
@@ -520,20 +605,23 @@ const App = () => {
               hasConfig={hasSupabaseConfig}
             />
           )}
-          {activeTab === "escala" && <TabEscala servidorSelecionado={servidorSelecionado} setServidorSelecionado={setServidorSelecionado} mesAtivo={mesAtivo} setMesAtivo={setMesAtivo} plantoesFiltrados={plantoesFiltrados} statsGlobais={statsGlobais} />}
-          {activeTab === "ferias" && <TabFerias />}
+          {activeTab === "escala" && <TabEscala servidores={servidores} servidorSelecionado={servidorSelecionado} setServidorSelecionado={setServidorSelecionado} mesAtivo={mesAtivo} setMesAtivo={setMesAtivo} plantoesFiltrados={plantoesFiltrados} statsGlobais={statsGlobais} />}
+          {activeTab === "ferias" && <TabFerias servidores={servidores} />}
           {activeTab === "feriados" && <TabFeriados />}
           {activeTab === "admin" && session && (
             <>
               <div className="bg-white rounded-3xl border border-slate-200 p-5 shadow-sm flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
                 <div>
                   <p className="text-[11px] font-black uppercase tracking-[0.2em] text-indigo-600">Painel administrativo</p>
-                  <h2 className="text-2xl font-black text-slate-800">{adminSection === "schedule" ? "Edicao da escala" : adminSection === "draw" ? "Ferramenta de sorteio" : "CRUD de usuarios e senha"}</h2>
+                  <h2 className="text-2xl font-black text-slate-800">{adminSection === "schedule" ? "Edicao da escala" : adminSection === "servers" ? "Cadastro de servidores" : adminSection === "draw" ? "Ferramenta de sorteio" : "CRUD de usuarios e senha"}</h2>
                   <p className="text-sm text-slate-500">Usuario autenticado: {session.user.email}</p>
                 </div>
                 <div className="flex gap-2 flex-wrap">
                   <button onClick={() => setAdminSection("schedule")} className={`rounded-2xl px-4 py-3 text-sm font-bold flex items-center gap-2 ${adminSection === "schedule" ? "bg-indigo-600 text-white" : "border border-slate-200 text-slate-600 hover:bg-slate-50"}`}>
                     <Calendar size={16} /> Escala
+                  </button>
+                  <button onClick={() => setAdminSection("servers")} className={`rounded-2xl px-4 py-3 text-sm font-bold flex items-center gap-2 ${adminSection === "servers" ? "bg-emerald-600 text-white" : "border border-slate-200 text-slate-600 hover:bg-slate-50"}`}>
+                    <Users size={16} /> Servidores
                   </button>
                   <button onClick={() => setAdminSection("draw")} className={`rounded-2xl px-4 py-3 text-sm font-bold flex items-center gap-2 ${adminSection === "draw" ? "bg-amber-500 text-white" : "border border-slate-200 text-slate-600 hover:bg-slate-50"}`}>
                     <Users size={16} /> Sorteio
@@ -541,7 +629,7 @@ const App = () => {
                   <button onClick={() => setAdminSection("users")} className={`rounded-2xl px-4 py-3 text-sm font-bold flex items-center gap-2 ${adminSection === "users" ? "bg-slate-900 text-white" : "border border-slate-200 text-slate-600 hover:bg-slate-50"}`}>
                     <UserCog size={16} /> Usuarios
                   </button>
-                  <button onClick={() => supabase.auth.signOut().then(() => { setFormState(createEmptyForm()); setUserForm(createUserForm()); setSelectedDrawDate(""); setEligibleServers([]); setActiveTab("escala"); })} className="rounded-2xl border border-slate-200 px-4 py-3 text-sm font-bold text-slate-600 hover:bg-slate-50 flex items-center gap-2">
+                  <button onClick={() => supabase.auth.signOut().then(() => { setFormState(createEmptyForm()); setUserForm(createUserForm()); resetServerForm(); setSelectedDrawDate(""); setEligibleServers([]); setActiveTab("escala"); })} className="rounded-2xl border border-slate-200 px-4 py-3 text-sm font-bold text-slate-600 hover:bg-slate-50 flex items-center gap-2">
                     <LogOut size={16} /> Sair
                   </button>
                 </div>
@@ -601,7 +689,7 @@ const App = () => {
                       Servidor
                       <select className="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-indigo-500" value={formState.server_name} onChange={(event) => setFormState((current) => ({ ...current, server_name: event.target.value }))}>
                         <option value="">Selecione</option>
-                        {servidores.map((servidor) => <option key={servidor.nome} value={servidor.nome}>{servidor.nome}</option>)}
+                        {servidores.map((servidor) => <option key={servidor.nome} value={servidor.nome}>{servidor.nome}{servidor.active === false ? " (Inativo)" : ""}</option>)}
                       </select>
                     </label>
                     <label className="text-sm font-semibold text-slate-600">
@@ -641,6 +729,19 @@ const App = () => {
                 </div>
               </div>
             </div>
+            )}
+            {adminSection === "servers" && (
+              <AdminServersPanel
+                servidores={servidores}
+                loadingServers={loadingServers}
+                serverForm={serverForm}
+                setServerForm={setServerForm}
+                serverMessage={serverMessage}
+                saveServer={saveServer}
+                savingServer={savingServer}
+                resetServerForm={resetServerForm}
+                deleteServer={deleteServer}
+              />
             )}
             {adminSection === "users" && (
               <AdminUsersPanel
