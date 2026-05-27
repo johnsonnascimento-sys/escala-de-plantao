@@ -12,34 +12,69 @@ import {
   Flag,
   Info,
   LayoutDashboard,
-  LogOut,
   Palmtree,
   PencilLine,
   PlusCircle,
   Save,
-  UserCog,
   Users,
   X,
 } from "lucide-react";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import AdminDrawPanel from "./components/AdminDrawPanel";
-import AdminLogin from "./components/AdminLogin";
-import AdminUsersPanel from "./components/AdminUsersPanel";
-import PlantaoCard from "./components/PlantaoCard";
 import AdminServersPanel from "./components/AdminServersPanel";
-import { NOMES_MESES, SERVIDOR_A_DEFINIR, feriadosPortaria, plantoesBase, defaultServidores } from "./data/scheduleData";
+import PlantaoCard from "./components/PlantaoCard";
+import { NOMES_MESES, SERVIDOR_A_DEFINIR, defaultServidores, feriadosPortaria, plantoesBase } from "./data/scheduleData";
 import {
   applyOverrides,
   buildBaseSchedule,
   formatDateBr,
   getDisponibilidadeMensagem,
-  isPlantaoPendente,
   getStatsGlobais,
+  isPlantaoPendente,
   validateOverride,
 } from "./lib/schedule";
 import { mergeServerLists, normalizeServerName, normalizeServerRecord, parseDateRanges, serverToFormState } from "./lib/servers";
-import { hasSupabaseConfig, supabase } from "./lib/supabase";
+
+const STORAGE_KEYS = {
+  overrides: "escala.overrides.v1",
+  servers: "escala.servers.v1",
+};
+
+const createId = () =>
+  globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
+const readStoredJson = (key, fallback) => {
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return fallback;
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : fallback;
+  } catch {
+    return fallback;
+  }
+};
+
+const writeStoredJson = (key, value) => {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    // Local storage is best-effort only.
+  }
+};
+
+const normalizeOverrideRecord = (override, index = 0) => ({
+  id: override.id ?? `${override.date || "override"}-${index}-${createId()}`,
+  date: override.date ?? "",
+  mode: override.mode ?? "create",
+  judge_name: override.judge_name ?? "",
+  server_name: override.server_name ?? "",
+  desc: override.desc ?? "",
+  tipo: override.tipo ?? "DOM",
+  notes: override.notes ?? "",
+  created_at: override.created_at ?? override.updated_at ?? new Date().toISOString(),
+  updated_at: override.updated_at ?? override.created_at ?? new Date().toISOString(),
+});
 
 const createEmptyForm = () => ({
   id: null,
@@ -50,14 +85,6 @@ const createEmptyForm = () => ({
   desc: "",
   tipo: "DOM",
   notes: "",
-});
-
-const createUserForm = () => ({
-  id: null,
-  email: "",
-  display_name: "",
-  password: "",
-  active: true,
 });
 
 const createServerForm = () => serverToFormState();
@@ -124,7 +151,7 @@ const TabEscala = ({ servidores, servidorSelecionado, setServidorSelecionado, me
           <p>Claudia apenas Janeiro.</p>
           <p>Equidade: Sabado = 3, Domingo/Feriado = 4.</p>
           <p>Andre Luis fica fora do plantao entre 13/04 e 14/08/2026; nesses casos a escala fica a definir por sorteio.</p>
-          <p>Overrides manuais substituem a escala base quando cadastrados.</p>
+          <p>Overrides locais substituem a escala base quando cadastrados neste navegador.</p>
         </div>
       </div>
     </div>
@@ -197,84 +224,27 @@ const App = () => {
   const [activeTab, setActiveTab] = useState("escala");
   const [mesAtivo, setMesAtivo] = useState(new Date().getMonth());
   const [servidorSelecionado, setServidorSelecionado] = useState("Todos");
-  const [session, setSession] = useState(null);
-  const [authBusy, setAuthBusy] = useState(false);
-  const [authMessage, setAuthMessage] = useState("");
-  const [loginForm, setLoginForm] = useState({ email: "", password: "" });
-  const [overrides, setOverrides] = useState([]);
-  const [loadingOverrides, setLoadingOverrides] = useState(false);
-  const [savingOverride, setSavingOverride] = useState(false);
+  const [overrides, setOverrides] = useState(() => readStoredJson(STORAGE_KEYS.overrides, []).map(normalizeOverrideRecord));
   const [formState, setFormState] = useState(createEmptyForm());
   const [formMessage, setFormMessage] = useState("");
   const [adminFilterMonth, setAdminFilterMonth] = useState(new Date().getMonth());
   const [adminDateFilter, setAdminDateFilter] = useState("");
   const [adminSection, setAdminSection] = useState("schedule");
-  const [serverRows, setServerRows] = useState([]);
-  const [loadingServers, setLoadingServers] = useState(false);
-  const [savingServer, setSavingServer] = useState(false);
+  const [serverRows, setServerRows] = useState(() => readStoredJson(STORAGE_KEYS.servers, []).map(normalizeServerRecord));
   const [serverForm, setServerForm] = useState(createServerForm());
   const [serverMessage, setServerMessage] = useState("");
-  const [adminUsers, setAdminUsers] = useState([]);
-  const [loadingAdminUsers, setLoadingAdminUsers] = useState(false);
-  const [savingAdminUser, setSavingAdminUser] = useState(false);
-  const [userForm, setUserForm] = useState(createUserForm());
-  const [userMessage, setUserMessage] = useState("");
   const [selectedDrawDate, setSelectedDrawDate] = useState("");
   const [eligibleServers, setEligibleServers] = useState([]);
   const [drawMessage, setDrawMessage] = useState("");
   const [drawing, setDrawing] = useState(false);
 
   useEffect(() => {
-    if (!hasSupabaseConfig) return undefined;
-    supabase.auth.getSession().then(({ data }) => setSession(data.session ?? null));
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, nextSession) => setSession(nextSession));
-    return () => subscription.unsubscribe();
-  }, []);
+    writeStoredJson(STORAGE_KEYS.overrides, overrides);
+  }, [overrides]);
 
   useEffect(() => {
-    if (!hasSupabaseConfig) return;
-    const loadServers = async () => {
-      setLoadingServers(true);
-      const { data, error } = await supabase.from("schedule_servers").select("*").order("nome", { ascending: true });
-      setLoadingServers(false);
-      if (error) {
-        setServerMessage(`Nao foi possivel carregar servidores: ${error.message}`);
-        return;
-      }
-      setServerRows((data || []).map(normalizeServerRecord));
-    };
-    loadServers();
-  }, []);
-
-  useEffect(() => {
-    if (!hasSupabaseConfig) return;
-    const loadOverrides = async () => {
-      setLoadingOverrides(true);
-      const { data, error } = await supabase.from("shift_overrides").select("*").order("date", { ascending: true }).order("updated_at", { ascending: true });
-      setLoadingOverrides(false);
-      if (error) {
-        setAuthMessage(`Nao foi possivel carregar overrides: ${error.message}`);
-        return;
-      }
-      setOverrides(data || []);
-    };
-    loadOverrides();
-  }, [session]);
-
-  useEffect(() => {
-    if (!hasSupabaseConfig || !session) return;
-    const loadAdminUsers = async () => {
-      setLoadingAdminUsers(true);
-      const { data, error } = await supabase.from("admin_users").select("*").order("display_name", { ascending: true });
-      setLoadingAdminUsers(false);
-      if (error) {
-        setUserMessage(error.message);
-        return;
-      }
-      setAdminUsers(data || []);
-    };
-    loadAdminUsers();
-  }, [session]);
+    writeStoredJson(STORAGE_KEYS.servers, serverRows);
+  }, [serverRows]);
 
   const servidores = useMemo(() => mergeServerLists(defaultServidores, serverRows), [serverRows]);
   const escalaBase = useMemo(() => buildBaseSchedule(plantoesBase, servidores), [servidores]);
@@ -289,7 +259,6 @@ const App = () => {
   }, [escalaTotal, mesAtivo, servidorSelecionado]);
 
   const plantoesPendentes = useMemo(() => escalaTotal.filter((item) => isPlantaoPendente(item)), [escalaTotal]);
-
   const adminItems = useMemo(
     () => escalaTotal.filter((item) => Number(item.data.split("-")[1]) === adminFilterMonth + 1 && (!adminDateFilter || item.data === adminDateFilter)),
     [adminDateFilter, adminFilterMonth, escalaTotal],
@@ -297,11 +266,13 @@ const App = () => {
   const selectedPendingShift = useMemo(() => plantoesPendentes.find((item) => item.data === selectedDrawDate) || null, [plantoesPendentes, selectedDrawDate]);
 
   const buildEligibleServers = (date, preservedSelection = []) =>
-    servidores.filter((servidor) => servidor.active !== false).map((servidor) => ({
-      nome: servidor.nome,
-      warning: getDisponibilidadeMensagem(servidores, servidor.nome, date),
-      selected: preservedSelection.length > 0 ? preservedSelection.includes(servidor.nome) : !getDisponibilidadeMensagem(servidores, servidor.nome, date),
-    }));
+    servidores
+      .filter((servidor) => servidor.active !== false)
+      .map((servidor) => ({
+        nome: servidor.nome,
+        warning: getDisponibilidadeMensagem(servidores, servidor.nome, date),
+        selected: preservedSelection.length > 0 ? preservedSelection.includes(servidor.nome) : !getDisponibilidadeMensagem(servidores, servidor.nome, date),
+      }));
 
   const exportToPDF = () => {
     const doc = new jsPDF("p", "mm", "a4");
@@ -350,11 +321,9 @@ const App = () => {
     doc.save("Escala_Plantao_2026_Consolidada.pdf");
   };
 
-  const upsertOverride = async (payload, overrideId = null) => {
-    const query = overrideId
-      ? supabase.from("shift_overrides").update(payload).eq("id", overrideId).select().single()
-      : supabase.from("shift_overrides").insert(payload).select().single();
-    return query;
+  const resetOverrideForm = () => {
+    setFormState(createEmptyForm());
+    setFormMessage("");
   };
 
   const resetServerForm = () => {
@@ -363,7 +332,6 @@ const App = () => {
   };
 
   const saveServer = async () => {
-    if (!session) return setServerMessage("Faca login para cadastrar servidores.");
     const nome = normalizeServerName(serverForm.nome);
     if (!nome) return setServerMessage("Informe o nome do servidor.");
 
@@ -375,30 +343,23 @@ const App = () => {
       return setServerMessage(`Corrija os intervalos invalidos: ${invalidLines.join(" | ")}`);
     }
 
-    setSavingServer(true);
-    setServerMessage("");
-
-    const payload = {
+    const now = new Date().toISOString();
+    const existing = serverForm.id ? serverRows.find((item) => item.id === serverForm.id) : serverRows.find((item) => normalizeServerName(item.nome) === nome);
+    const payload = normalizeServerRecord({
+      id: existing?.id ?? serverForm.id ?? createId(),
       nome,
       jan_only: serverForm.janOnly,
       ferias: ferias.ranges,
       impedimentos: impedimentos.ranges,
       indisponibilidades_plantao: indisponibilidadesPlantao.ranges,
       active: serverForm.active,
-    };
+      created_at: existing?.created_at ?? now,
+      updated_at: now,
+    });
 
-    const query = serverForm.id
-      ? supabase.from("schedule_servers").update(payload).eq("id", serverForm.id).select().single()
-      : supabase.from("schedule_servers").insert({ ...payload, created_by: session.user.id }).select().single();
-
-    const { data, error } = await query;
-    setSavingServer(false);
-    if (error) return setServerMessage(error.message);
-
-    const savedServer = normalizeServerRecord(data);
     setServerRows((current) => {
-      const next = current.filter((item) => item.id !== savedServer.id && normalizeServerName(item.nome) !== normalizeServerName(savedServer.nome));
-      return [...next, savedServer].sort((a, b) => a.nome.localeCompare(b.nome));
+      const next = current.filter((item) => item.id !== payload.id && normalizeServerName(item.nome) !== nome);
+      return [...next, payload].sort((a, b) => a.nome.localeCompare(b.nome));
     });
     setServerForm(createServerForm());
     setServerMessage("Servidor salvo com sucesso.");
@@ -406,24 +367,22 @@ const App = () => {
 
   const deleteServer = async (server) => {
     if (!server.id) {
-      return setServerMessage("Este servidor faz parte da base padrao. Edite-o para criar uma sobreposicao ou crie um novo registro.");
+      return setServerMessage("Este servidor faz parte da base padrao. Edite-o para criar uma sobreposicao ou adicione um servidor novo.");
     }
 
-    if (!session) return setServerMessage("Faca login para remover servidores.");
-    const { error } = await supabase.from("schedule_servers").delete().eq("id", server.id);
-    if (error) return setServerMessage(error.message);
     setServerRows((current) => current.filter((item) => item.id !== server.id));
     if (serverForm.id === server.id) resetServerForm();
     setServerMessage("Servidor removido com sucesso.");
   };
 
   const saveOverride = async () => {
-    if (!session) return setFormMessage("Faca login para salvar overrides.");
     const validationError = validateOverride(formState, escalaBase);
     if (validationError) return setFormMessage(validationError);
-    setSavingOverride(true);
-    setFormMessage("");
-    const payload = {
+
+    const now = new Date().toISOString();
+    const existing = formState.id ? overrides.find((item) => item.id === formState.id) : null;
+    const payload = normalizeOverrideRecord({
+      id: existing?.id ?? formState.id ?? createId(),
       date: formState.date,
       mode: formState.mode,
       judge_name: formState.judge_name.trim(),
@@ -431,73 +390,19 @@ const App = () => {
       desc: formState.desc.trim(),
       tipo: formState.tipo,
       notes: formState.notes.trim(),
-      created_by: session.user.id,
-    };
-    const { data, error } = await upsertOverride(payload, formState.id);
-    setSavingOverride(false);
-    if (error) return setFormMessage(error.message);
-    setOverrides((current) => [...current.filter((item) => item.id !== data.id), data].sort((a, b) => a.date.localeCompare(b.date)));
+      created_at: existing?.created_at ?? now,
+      updated_at: now,
+    });
+
+    setOverrides((current) => {
+      const next = current.filter((item) => item.id !== payload.id);
+      return [...next, payload].sort((a, b) => {
+        if (a.date === b.date) return new Date(a.updated_at || a.created_at || 0) - new Date(b.updated_at || b.created_at || 0);
+        return a.date.localeCompare(b.date);
+      });
+    });
     setFormState(createEmptyForm());
     setFormMessage("Override salvo com sucesso.");
-  };
-
-  const saveAdminUser = async () => {
-    if (!session) return setUserMessage("Faca login para administrar usuarios.");
-    if (!userForm.email || !userForm.display_name) return setUserMessage("Preencha e-mail e nome.");
-    if (!userForm.id && !userForm.password) return setUserMessage("Defina uma senha para o novo usuario.");
-
-    setSavingAdminUser(true);
-    setUserMessage("");
-
-    if (userForm.id) {
-      const { data, error } = await supabase.rpc("admin_update_user", {
-        p_user_id: userForm.id,
-        p_email: userForm.email.trim().toLowerCase(),
-        p_display_name: userForm.display_name.trim(),
-        p_active: userForm.active,
-      });
-      if (error) {
-        setSavingAdminUser(false);
-        return setUserMessage(error.message);
-      }
-
-      if (userForm.password) {
-        const { error: passwordError } = await supabase.rpc("admin_update_password", {
-          p_user_id: userForm.id,
-          p_password: userForm.password,
-        });
-        if (passwordError) {
-          setSavingAdminUser(false);
-          return setUserMessage(passwordError.message);
-        }
-      }
-
-      setAdminUsers((current) => current.map((item) => (item.id === data.id ? data : item)).sort((a, b) => a.display_name.localeCompare(b.display_name)));
-      setSavingAdminUser(false);
-      setUserForm(createUserForm());
-      setUserMessage("Usuario atualizado com sucesso.");
-      return;
-    }
-
-    const { data, error } = await supabase.rpc("admin_create_user", {
-      p_email: userForm.email.trim().toLowerCase(),
-      p_password: userForm.password,
-      p_display_name: userForm.display_name.trim(),
-    });
-    setSavingAdminUser(false);
-    if (error) return setUserMessage(error.message);
-
-    setAdminUsers((current) => [...current, data].sort((a, b) => a.display_name.localeCompare(b.display_name)));
-    setUserForm(createUserForm());
-    setUserMessage("Usuario criado com sucesso.");
-  };
-
-  const deleteAdminUser = async (userId) => {
-    const { error } = await supabase.rpc("admin_delete_user", { p_user_id: userId });
-    if (error) return setUserMessage(error.message);
-    setAdminUsers((current) => current.filter((item) => item.id !== userId));
-    if (userForm.id === userId) setUserForm(createUserForm());
-    setUserMessage("Usuario excluido com sucesso.");
   };
 
   const toggleEligibleServer = (nome) => {
@@ -516,14 +421,15 @@ const App = () => {
   };
 
   const runDraw = async () => {
-    if (!session || !selectedPendingShift) return setDrawMessage("Selecione um plantao pendente para sortear.");
+    if (!selectedPendingShift) return setDrawMessage("Selecione um plantao pendente para sortear.");
     const participantes = eligibleServers.filter((item) => item.selected);
     if (participantes.length === 0) return setDrawMessage("Selecione ao menos um servidor para participar do sorteio.");
 
     setDrawing(true);
     setDrawMessage("");
     const sorteado = participantes[Math.floor(Math.random() * participantes.length)];
-    const payload = {
+    const payload = normalizeOverrideRecord({
+      id: createId(),
       date: selectedPendingShift.data,
       mode: "replace",
       judge_name: selectedPendingShift.juiz,
@@ -531,27 +437,20 @@ const App = () => {
       desc: selectedPendingShift.desc,
       tipo: selectedPendingShift.tipo,
       notes: `Sorteio realizado entre: ${participantes.map((item) => item.nome).join(", ")}. Sorteado: ${sorteado.nome}.`,
-      created_by: session.user.id,
-    };
-    const { data, error } = await upsertOverride(payload, selectedPendingShift.overrideId || null);
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    });
+    setOverrides((current) => {
+      const next = current.filter((item) => item.id !== payload.id);
+      return [...next, payload].sort((a, b) => {
+        if (a.date === b.date) return new Date(a.updated_at || a.created_at || 0) - new Date(b.updated_at || b.created_at || 0);
+        return a.date.localeCompare(b.date);
+      });
+    });
     setDrawing(false);
-    if (error) return setDrawMessage(error.message);
-    setOverrides((current) => [...current.filter((item) => item.id !== data.id), data].sort((a, b) => a.date.localeCompare(b.date)));
     setDrawMessage(`Sorteio concluido. Servidor sorteado: ${sorteado.nome}.`);
     setSelectedDrawDate("");
     setEligibleServers([]);
-  };
-
-  const handleLogin = async (event) => {
-    event.preventDefault();
-    if (!hasSupabaseConfig) return;
-    setAuthBusy(true);
-    setAuthMessage("");
-    const { error } = await supabase.auth.signInWithPassword(loginForm);
-    setAuthBusy(false);
-    if (error) return setAuthMessage(error.message);
-    setAuthMessage("Login realizado com sucesso.");
-    setActiveTab("admin");
   };
 
   const handleEditPlantao = (plantao) => {
@@ -577,8 +476,8 @@ const App = () => {
             <div className="p-4 bg-indigo-600 rounded-3xl text-white shadow-xl shadow-indigo-100"><LayoutDashboard size={32} /></div>
             <div>
               <h1 className="text-3xl font-black text-slate-800 tracking-tight">Escala de Plantao 2026</h1>
-              <p className="text-slate-500 font-medium">Gestao integrada de plantoes, ferias, usuarios e overrides manuais</p>
-              <p className="text-slate-400 text-xs font-medium mt-1">{loadingOverrides ? "Carregando overrides..." : `Escala consolidada com ${overrides.length} override(s)`}</p>
+              <p className="text-slate-500 font-medium">Gestao integrada de plantoes, ferias e ajustes manuais locais</p>
+              <p className="text-slate-400 text-xs font-medium mt-1">Dados salvos apenas neste navegador. {`Escala consolidada com ${overrides.length} override(s)`}</p>
             </div>
           </div>
           <button onClick={exportToPDF} className="w-full md:w-auto flex items-center justify-center gap-2 px-6 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl text-sm font-bold transition-all shadow-lg shadow-indigo-100">
@@ -590,31 +489,20 @@ const App = () => {
           <button onClick={() => setActiveTab("escala")} className={`flex-1 md:flex-none px-6 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 ${activeTab === "escala" ? "bg-indigo-600 text-white shadow-sm" : "text-slate-500 hover:bg-slate-50"}`}><Briefcase size={16} /> Escala</button>
           <button onClick={() => setActiveTab("ferias")} className={`flex-1 md:flex-none px-6 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 ${activeTab === "ferias" ? "bg-indigo-600 text-white shadow-sm" : "text-slate-500 hover:bg-slate-50"}`}><Palmtree size={16} /> Ferias</button>
           <button onClick={() => setActiveTab("feriados")} className={`flex-1 md:flex-none px-6 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 ${activeTab === "feriados" ? "bg-indigo-600 text-white shadow-sm" : "text-slate-500 hover:bg-slate-50"}`}><Flag size={16} /> Feriados</button>
-          {session && <button onClick={() => setActiveTab("admin")} className={`flex-1 md:flex-none px-6 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 ${activeTab === "admin" ? "bg-slate-900 text-white shadow-sm" : "text-slate-500 hover:bg-slate-50"}`}><PencilLine size={16} /> Painel admin</button>}
+          <button onClick={() => setActiveTab("admin")} className={`flex-1 md:flex-none px-6 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 ${activeTab === "admin" ? "bg-slate-900 text-white shadow-sm" : "text-slate-500 hover:bg-slate-50"}`}><PencilLine size={16} /> Painel admin</button>
         </div>
 
         <div className="space-y-6">
-          {!session && activeTab === "escala" && (
-            <AdminLogin
-              email={loginForm.email}
-              password={loginForm.password}
-              onChange={(field, value) => setLoginForm((current) => ({ ...current, [field]: value }))}
-              onSubmit={handleLogin}
-              authBusy={authBusy}
-              authMessage={authMessage}
-              hasConfig={hasSupabaseConfig}
-            />
-          )}
           {activeTab === "escala" && <TabEscala servidores={servidores} servidorSelecionado={servidorSelecionado} setServidorSelecionado={setServidorSelecionado} mesAtivo={mesAtivo} setMesAtivo={setMesAtivo} plantoesFiltrados={plantoesFiltrados} statsGlobais={statsGlobais} />}
           {activeTab === "ferias" && <TabFerias servidores={servidores} />}
           {activeTab === "feriados" && <TabFeriados />}
-          {activeTab === "admin" && session && (
+          {activeTab === "admin" && (
             <>
               <div className="bg-white rounded-3xl border border-slate-200 p-5 shadow-sm flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
                 <div>
-                  <p className="text-[11px] font-black uppercase tracking-[0.2em] text-indigo-600">Painel administrativo</p>
-                  <h2 className="text-2xl font-black text-slate-800">{adminSection === "schedule" ? "Edicao da escala" : adminSection === "servers" ? "Cadastro de servidores" : adminSection === "draw" ? "Ferramenta de sorteio" : "CRUD de usuarios e senha"}</h2>
-                  <p className="text-sm text-slate-500">Usuario autenticado: {session.user.email}</p>
+                  <p className="text-[11px] font-black uppercase tracking-[0.2em] text-indigo-600">Painel administrativo local</p>
+                  <h2 className="text-2xl font-black text-slate-800">{adminSection === "schedule" ? "Edicao da escala" : adminSection === "servers" ? "Cadastro de servidores" : "Ferramenta de sorteio"}</h2>
+                  <p className="text-sm text-slate-500">Sem autenticacao. Tudo fica salvo neste navegador.</p>
                 </div>
                 <div className="flex gap-2 flex-wrap">
                   <button onClick={() => setAdminSection("schedule")} className={`rounded-2xl px-4 py-3 text-sm font-bold flex items-center gap-2 ${adminSection === "schedule" ? "bg-indigo-600 text-white" : "border border-slate-200 text-slate-600 hover:bg-slate-50"}`}>
@@ -626,150 +514,132 @@ const App = () => {
                   <button onClick={() => setAdminSection("draw")} className={`rounded-2xl px-4 py-3 text-sm font-bold flex items-center gap-2 ${adminSection === "draw" ? "bg-amber-500 text-white" : "border border-slate-200 text-slate-600 hover:bg-slate-50"}`}>
                     <Users size={16} /> Sorteio
                   </button>
-                  <button onClick={() => setAdminSection("users")} className={`rounded-2xl px-4 py-3 text-sm font-bold flex items-center gap-2 ${adminSection === "users" ? "bg-slate-900 text-white" : "border border-slate-200 text-slate-600 hover:bg-slate-50"}`}>
-                    <UserCog size={16} /> Usuarios
-                  </button>
-                  <button onClick={() => supabase.auth.signOut().then(() => { setFormState(createEmptyForm()); setUserForm(createUserForm()); resetServerForm(); setSelectedDrawDate(""); setEligibleServers([]); setActiveTab("escala"); })} className="rounded-2xl border border-slate-200 px-4 py-3 text-sm font-bold text-slate-600 hover:bg-slate-50 flex items-center gap-2">
-                    <LogOut size={16} /> Sair
-                  </button>
                 </div>
               </div>
 
-            {adminSection === "schedule" && (
-            <div className="grid grid-cols-1 xl:grid-cols-[1.15fr_0.85fr] gap-6">
-              <div className="space-y-6">
+              {adminSection === "schedule" && (
+                <div className="grid grid-cols-1 xl:grid-cols-[1.15fr_0.85fr] gap-6">
+                  <div className="space-y-6">
+                    <div className="bg-white rounded-3xl border border-slate-200 p-5 shadow-sm space-y-4">
+                      <div className="flex items-center gap-3">
+                        <Calendar size={18} className="text-indigo-500" />
+                        <h3 className="text-lg font-black text-slate-800">Plantoes cadastrados</h3>
+                      </div>
+                      <div className="grid gap-4 md:grid-cols-[220px_1fr]">
+                        <label className="text-sm font-semibold text-slate-600">
+                          Mes
+                          <select className="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-indigo-500" value={adminFilterMonth} onChange={(event) => setAdminFilterMonth(Number(event.target.value))}>
+                            {NOMES_MESES.map((mes, index) => <option key={mes} value={index}>{mes}</option>)}
+                          </select>
+                        </label>
+                        <label className="text-sm font-semibold text-slate-600">
+                          Filtrar por data
+                          <input className="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-indigo-500" type="date" value={adminDateFilter} onChange={(event) => setAdminDateFilter(event.target.value)} />
+                        </label>
+                      </div>
+                      <div className="space-y-3">
+                        {adminItems.map((plantao) => <PlantaoCard key={`${plantao.data}-${plantao.servidor}-${plantao.overrideId || "base"}-admin`} plantao={plantao} onEdit={handleEditPlantao} />)}
+                        {adminItems.length === 0 && <div className="rounded-2xl border border-dashed border-slate-300 p-8 text-center text-sm text-slate-500">Nenhum plantao encontrado para os filtros administrativos.</div>}
+                      </div>
+                    </div>
+                  </div>
 
-                <div className="bg-white rounded-3xl border border-slate-200 p-5 shadow-sm space-y-4">
-                  <div className="flex items-center gap-3">
-                    <Calendar size={18} className="text-indigo-500" />
-                    <h3 className="text-lg font-black text-slate-800">Plantoes cadastrados</h3>
-                  </div>
-                  <div className="grid gap-4 md:grid-cols-[220px_1fr]">
-                    <label className="text-sm font-semibold text-slate-600">
-                      Mes
-                      <select className="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-indigo-500" value={adminFilterMonth} onChange={(event) => setAdminFilterMonth(Number(event.target.value))}>
-                        {NOMES_MESES.map((mes, index) => <option key={mes} value={index}>{mes}</option>)}
-                      </select>
-                    </label>
-                    <label className="text-sm font-semibold text-slate-600">
-                      Filtrar por data
-                      <input className="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-indigo-500" type="date" value={adminDateFilter} onChange={(event) => setAdminDateFilter(event.target.value)} />
-                    </label>
-                  </div>
-                  <div className="space-y-3">
-                    {adminItems.map((plantao) => <PlantaoCard key={`${plantao.data}-${plantao.servidor}-${plantao.overrideId || "base"}-admin`} plantao={plantao} onEdit={handleEditPlantao} />)}
-                    {adminItems.length === 0 && <div className="rounded-2xl border border-dashed border-slate-300 p-8 text-center text-sm text-slate-500">Nenhum plantao encontrado para os filtros administrativos.</div>}
+                  <div className="space-y-6">
+                    <div className="bg-white rounded-3xl border border-slate-200 p-5 shadow-sm space-y-4">
+                      <div className="flex items-center gap-3">
+                        {formState.mode === "create" ? <PlusCircle size={18} className="text-emerald-500" /> : <PencilLine size={18} className="text-indigo-500" />}
+                        <h3 className="text-lg font-black text-slate-800">{formState.mode === "create" ? "Novo plantao manual" : "Editar plantao"}</h3>
+                      </div>
+                      <div className="grid gap-4 md:grid-cols-2">
+                        <label className="text-sm font-semibold text-slate-600">
+                          Tipo de registro
+                          <select className="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-indigo-500" value={formState.mode} onChange={(event) => setFormState((current) => ({ ...current, mode: event.target.value }))}>
+                            <option value="create">Criar novo plantao</option>
+                            <option value="replace">Substituir plantao existente</option>
+                          </select>
+                        </label>
+                        <label className="text-sm font-semibold text-slate-600">
+                          Data
+                          <input className="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-indigo-500" type="date" value={formState.date} onChange={(event) => setFormState((current) => ({ ...current, date: event.target.value }))} />
+                        </label>
+                        <label className="text-sm font-semibold text-slate-600">
+                          Magistrado
+                          <input className="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-indigo-500" value={formState.judge_name} onChange={(event) => setFormState((current) => ({ ...current, judge_name: event.target.value }))} />
+                        </label>
+                        <label className="text-sm font-semibold text-slate-600">
+                          Servidor
+                          <select className="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-indigo-500" value={formState.server_name} onChange={(event) => setFormState((current) => ({ ...current, server_name: event.target.value }))}>
+                            <option value="">Selecione</option>
+                            <option value={SERVIDOR_A_DEFINIR}>{SERVIDOR_A_DEFINIR}</option>
+                            {servidores.map((servidor) => <option key={servidor.nome} value={servidor.nome}>{servidor.nome}{servidor.active === false ? " (Inativo)" : ""}</option>)}
+                          </select>
+                        </label>
+                        <label className="text-sm font-semibold text-slate-600">
+                          Tipo
+                          <select className="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-indigo-500" value={formState.tipo} onChange={(event) => setFormState((current) => ({ ...current, tipo: event.target.value }))}>
+                            <option value="SAB">Sabado</option>
+                            <option value="DOM">Domingo/Feriado</option>
+                          </select>
+                        </label>
+                        <label className="text-sm font-semibold text-slate-600">
+                          Descricao
+                          <input className="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-indigo-500" value={formState.desc} onChange={(event) => setFormState((current) => ({ ...current, desc: event.target.value }))} placeholder="Ex.: Domingo, Tiradentes, Sabado" />
+                        </label>
+                      </div>
+                      <label className="text-sm font-semibold text-slate-600 block">
+                        Observacao
+                        <textarea className="mt-2 min-h-[120px] w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-indigo-500" value={formState.notes} onChange={(event) => setFormState((current) => ({ ...current, notes: event.target.value }))} placeholder="Descreva o motivo da alteracao manual." />
+                      </label>
+                      {warningMessage && <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900 flex gap-3"><AlertCircle size={18} className="shrink-0 mt-0.5" /><span>{warningMessage}</span></div>}
+                      {formMessage && <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">{formMessage}</div>}
+                      <div className="flex flex-col sm:flex-row gap-3">
+                        <button onClick={saveOverride} className="flex-1 rounded-2xl bg-indigo-600 px-4 py-3 text-sm font-bold text-white hover:bg-indigo-700 flex items-center justify-center gap-2">
+                          <Save size={16} /> Salvar override
+                        </button>
+                        <button onClick={resetOverrideForm} className="rounded-2xl border border-slate-200 px-4 py-3 text-sm font-bold text-slate-600 hover:bg-slate-50">
+                          Limpar formulario
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="bg-slate-900 rounded-3xl p-5 text-slate-300 text-[13px] space-y-3">
+                      <h3 className="font-bold text-white text-sm flex items-center gap-2"><Users size={16} className="text-emerald-400" /> Regras desta versao</h3>
+                      <p>O sistema permite substituir um plantao existente ou criar um novo plantao avulso.</p>
+                      <p>O alerta de ferias/impedimento nao bloqueia automaticamente o salvamento.</p>
+                      <p>O PDF e o balanco usam a escala consolidada com os overrides locais mais recentes.</p>
+                    </div>
                   </div>
                 </div>
-              </div>
+              )}
 
-              <div className="space-y-6">
-                <div className="bg-white rounded-3xl border border-slate-200 p-5 shadow-sm space-y-4">
-                  <div className="flex items-center gap-3">
-                    {formState.mode === "create" ? <PlusCircle size={18} className="text-emerald-500" /> : <PencilLine size={18} className="text-indigo-500" />}
-                    <h3 className="text-lg font-black text-slate-800">{formState.mode === "create" ? "Novo plantao manual" : "Editar plantao"}</h3>
-                  </div>
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <label className="text-sm font-semibold text-slate-600">
-                      Tipo de registro
-                      <select className="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-indigo-500" value={formState.mode} onChange={(event) => setFormState((current) => ({ ...current, mode: event.target.value }))}>
-                        <option value="create">Criar novo plantao</option>
-                        <option value="replace">Substituir plantao existente</option>
-                      </select>
-                    </label>
-                    <label className="text-sm font-semibold text-slate-600">
-                      Data
-                      <input className="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-indigo-500" type="date" value={formState.date} onChange={(event) => setFormState((current) => ({ ...current, date: event.target.value }))} />
-                    </label>
-                    <label className="text-sm font-semibold text-slate-600">
-                      Magistrado
-                      <input className="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-indigo-500" value={formState.judge_name} onChange={(event) => setFormState((current) => ({ ...current, judge_name: event.target.value }))} />
-                    </label>
-                    <label className="text-sm font-semibold text-slate-600">
-                      Servidor
-                      <select className="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-indigo-500" value={formState.server_name} onChange={(event) => setFormState((current) => ({ ...current, server_name: event.target.value }))}>
-                        <option value="">Selecione</option>
-                        {servidores.map((servidor) => <option key={servidor.nome} value={servidor.nome}>{servidor.nome}{servidor.active === false ? " (Inativo)" : ""}</option>)}
-                      </select>
-                    </label>
-                    <label className="text-sm font-semibold text-slate-600">
-                      Tipo
-                      <select className="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-indigo-500" value={formState.tipo} onChange={(event) => setFormState((current) => ({ ...current, tipo: event.target.value }))}>
-                        <option value="SAB">Sabado</option>
-                        <option value="DOM">Domingo/Feriado</option>
-                      </select>
-                    </label>
-                    <label className="text-sm font-semibold text-slate-600">
-                      Descricao
-                      <input className="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-indigo-500" value={formState.desc} onChange={(event) => setFormState((current) => ({ ...current, desc: event.target.value }))} placeholder="Ex.: Domingo, Tiradentes, Sabado" />
-                    </label>
-                  </div>
-                  <label className="text-sm font-semibold text-slate-600 block">
-                    Observacao
-                    <textarea className="mt-2 min-h-[120px] w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-indigo-500" value={formState.notes} onChange={(event) => setFormState((current) => ({ ...current, notes: event.target.value }))} placeholder="Descreva o motivo da alteracao manual." />
-                  </label>
-                  {warningMessage && <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900 flex gap-3"><AlertCircle size={18} className="shrink-0 mt-0.5" /><span>{warningMessage}</span></div>}
-                  {formMessage && <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">{formMessage}</div>}
-                  <div className="flex flex-col sm:flex-row gap-3">
-                    <button onClick={saveOverride} disabled={savingOverride} className="flex-1 rounded-2xl bg-indigo-600 px-4 py-3 text-sm font-bold text-white hover:bg-indigo-700 disabled:opacity-60 flex items-center justify-center gap-2">
-                      <Save size={16} /> {savingOverride ? "Salvando..." : "Salvar override"}
-                    </button>
-                    <button onClick={() => { setFormState(createEmptyForm()); setFormMessage(""); }} className="rounded-2xl border border-slate-200 px-4 py-3 text-sm font-bold text-slate-600 hover:bg-slate-50">
-                      Limpar formulario
-                    </button>
-                  </div>
-                </div>
+              {adminSection === "servers" && (
+                <AdminServersPanel
+                  servidores={servidores}
+                  loadingServers={false}
+                  serverForm={serverForm}
+                  setServerForm={setServerForm}
+                  serverMessage={serverMessage}
+                  saveServer={saveServer}
+                  savingServer={false}
+                  resetServerForm={resetServerForm}
+                  deleteServer={deleteServer}
+                />
+              )}
 
-                <div className="bg-slate-900 rounded-3xl p-5 text-slate-300 text-[13px] space-y-3">
-                  <h3 className="font-bold text-white text-sm flex items-center gap-2"><Users size={16} className="text-emerald-400" /> Regras desta versao</h3>
-                  <p>• O sistema permite substituir um plantao existente ou criar um novo plantao avulso.</p>
-                  <p>• O alerta de ferias/impedimento nao bloqueia automaticamente o salvamento.</p>
-                  <p>• O PDF e o balanco usam a escala consolidada com os overrides mais recentes.</p>
-                  {authMessage && <p className="text-slate-400">{authMessage}</p>}
-                </div>
-              </div>
-            </div>
-            )}
-            {adminSection === "servers" && (
-              <AdminServersPanel
-                servidores={servidores}
-                loadingServers={loadingServers}
-                serverForm={serverForm}
-                setServerForm={setServerForm}
-                serverMessage={serverMessage}
-                saveServer={saveServer}
-                savingServer={savingServer}
-                resetServerForm={resetServerForm}
-                deleteServer={deleteServer}
-              />
-            )}
-            {adminSection === "users" && (
-              <AdminUsersPanel
-                adminUsers={adminUsers}
-                loadingAdminUsers={loadingAdminUsers}
-                userForm={userForm}
-                setUserForm={setUserForm}
-                userMessage={userMessage}
-                saveAdminUser={saveAdminUser}
-                savingAdminUser={savingAdminUser}
-                resetUserForm={() => { setUserForm(createUserForm()); setUserMessage(""); }}
-                deleteAdminUser={deleteAdminUser}
-              />
-            )}
-            {adminSection === "draw" && (
-              <AdminDrawPanel
-                pendingShifts={plantoesPendentes}
-                selectedPendingShift={selectedPendingShift}
-                selectedDrawDate={selectedDrawDate}
-                selectPendingShift={selectPendingShift}
-                eligibleServers={eligibleServers}
-                toggleEligibleServer={toggleEligibleServer}
-                defaultEligibleServers={resetDefaultEligibleServers}
-                drawMessage={drawMessage}
-                runDraw={runDraw}
-                drawing={drawing}
-              />
-            )}
+              {adminSection === "draw" && (
+                <AdminDrawPanel
+                  pendingShifts={plantoesPendentes}
+                  selectedPendingShift={selectedPendingShift}
+                  selectedDrawDate={selectedDrawDate}
+                  selectPendingShift={selectPendingShift}
+                  eligibleServers={eligibleServers}
+                  toggleEligibleServer={toggleEligibleServer}
+                  defaultEligibleServers={resetDefaultEligibleServers}
+                  drawMessage={drawMessage}
+                  runDraw={runDraw}
+                  drawing={drawing}
+                />
+              )}
             </>
           )}
         </div>
