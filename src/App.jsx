@@ -428,7 +428,7 @@ const App = () => {
       setHealthcheckLogs(result.logs || []);
 
       if (result.remoteError) {
-        setHealthcheckMessage(`Nao foi possivel carregar os logs de teste: ${result.remoteError}`);
+        setHealthcheckMessage(result.remoteError);
       } else if (!silent && result.remoteConfigured && (result.logs || []).length === 0) {
         setHealthcheckMessage("Nenhum teste de banco registrado ainda.");
       }

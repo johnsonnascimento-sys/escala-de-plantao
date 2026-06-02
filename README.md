@@ -104,6 +104,7 @@ O repositorio inclui um healthcheck semanal do Supabase via GitHub Actions em [`
 - O teste usa as mesmas variaveis do deploy: `VITE_SUPABASE_URL` e `VITE_SUPABASE_ANON_KEY`.
 - A verificacao faz leitura da linha `current` em `public.escala_app_state` e falha se a tabela, a permissao de leitura ou o payload estiverem inconsistentes.
 - Se o repositório tiver o segredo opcional `SUPABASE_SERVICE_ROLE_KEY`, o workflow semanal tambem grava o resultado em `public.escala_db_healthchecks`, que e a mesma fonte lida pelo painel admin.
+- Se o painel mostrar aviso de migration pendente, aplique `supabase/migrations/20260602190000_create_escala_db_healthchecks.sql` no projeto Supabase remoto e recarregue a pagina.
 
 Para executar manualmente:
 

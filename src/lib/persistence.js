@@ -34,6 +34,9 @@ const normalizeDatabaseHealthcheckRecord = (record) => ({
 
 const createDatabaseHealthcheckId = () => globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
+const isMissingHealthcheckTableError = (message = "") =>
+  /could not find the table.*escala_db_healthchecks|schema cache/i.test(String(message));
+
 const isGitHubPagesHost = () => {
   try {
     return globalThis.location?.hostname?.endsWith("github.io") ?? false;
@@ -256,21 +259,33 @@ export const loadDatabaseHealthcheckLogs = async ({ limit = 10 } = {}) => {
       .limit(limit);
 
     if (error) {
+      if (isMissingHealthcheckTableError(error.message)) {
+        return {
+          remoteConfigured: true,
+          remoteError: "A tabela public.escala_db_healthchecks ainda nao existe no banco remoto. Aplique a migration supabase/migrations/20260602190000_create_escala_db_healthchecks.sql e recarregue a pagina.",
+          migrationPending: true,
+          logs: [],
+        };
+      }
+
       return {
         remoteConfigured: true,
         remoteError: error.message,
+        migrationPending: false,
         logs: [],
       };
     }
 
     return {
       remoteConfigured: true,
+      migrationPending: false,
       logs: Array.isArray(data) ? data.map(normalizeDatabaseHealthcheckRecord) : [],
     };
   } catch (error) {
     return {
       remoteConfigured: true,
       remoteError: error?.message ?? "Falha ao carregar os logs de teste do banco.",
+      migrationPending: false,
       logs: [],
     };
   }
@@ -337,10 +352,25 @@ export const runDatabaseHealthcheck = async ({ source = "manual" } = {}) => {
 
   const { error: insertError } = await client.from(SUPABASE_HEALTHCHECK_TABLE).insert(logEntry);
 
+  if (insertError && isMissingHealthcheckTableError(insertError.message)) {
+    return {
+      remoteConfigured: true,
+      remoteSaved: false,
+      remoteError: "A tabela public.escala_db_healthchecks ainda nao existe no banco remoto. Aplique a migration supabase/migrations/20260602190000_create_escala_db_healthchecks.sql e recarregue a pagina.",
+      status,
+      message,
+      details,
+      duration_ms: logEntry.duration_ms,
+      log: null,
+      migrationPending: true,
+    };
+  }
+
   return {
     remoteConfigured: true,
     remoteSaved: !insertError,
     remoteError: insertError?.message ?? null,
+    migrationPending: false,
     status,
     message,
     details,
