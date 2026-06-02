@@ -342,14 +342,6 @@ const App = () => {
   const selectedPendingShift = useMemo(() => plantoesPendentes.find((item) => item.data === selectedDrawDate) || null, [plantoesPendentes, selectedDrawDate]);
   const canEdit = Boolean(adminUser);
 
-  useEffect(() => {
-    if (!canEdit || adminSection !== "database") {
-      return;
-    }
-
-    void refreshHealthcheckLogs({ silent: true });
-  }, [adminSection, canEdit, refreshHealthcheckLogs]);
-
   const buildEligibleServers = (date, preservedSelection = []) =>
     servidores
       .filter((servidor) => servidor.active !== false)
@@ -470,6 +462,14 @@ const App = () => {
       setHealthcheckRunning(false);
     }
   }, [canEdit, healthcheckRunning, refreshHealthcheckLogs]);
+
+  useEffect(() => {
+    if (!canEdit || adminSection !== "database") {
+      return;
+    }
+
+    void refreshHealthcheckLogs({ silent: true });
+  }, [adminSection, canEdit, refreshHealthcheckLogs]);
 
   const validateRangeDrafts = (rows = [], label = "") => {
     const invalidIndexes = rows

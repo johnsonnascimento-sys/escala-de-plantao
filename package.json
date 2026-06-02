@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "vite build && node scripts/postbuild-assets.js",
     "lint": "eslint .",
     "healthcheck:supabase": "node scripts/check_supabase_health.js",
     "preview": "vite preview"
