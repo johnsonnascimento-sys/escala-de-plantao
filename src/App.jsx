@@ -37,7 +37,7 @@ import {
   isPlantaoPendente,
   validateOverride,
 } from "./lib/schedule";
-import { mergeServerLists, normalizeServerName, normalizeServerRecord, parseDateRanges, serverToFormState } from "./lib/servers";
+import { draftRangesToDateRanges, mergeServerLists, normalizeServerName, normalizeServerRecord, serverToFormState } from "./lib/servers";
 import {
   getCurrentAdminUser,
   isRemotePersistenceConfigured,
@@ -412,6 +412,23 @@ const App = () => {
     return result;
   };
 
+  const validateRangeDrafts = (rows = [], label = "") => {
+    const invalidIndexes = rows
+      .map((row, index) => ({
+        index,
+        start: String(row?.start ?? "").trim(),
+        end: String(row?.end ?? "").trim(),
+      }))
+      .filter((row) => !row.start || !row.end)
+      .map((row) => row.index + 1);
+
+    if (invalidIndexes.length > 0) {
+      return `${label} com períodos incompletos: ${invalidIndexes.join(", ")}. Preencha início e fim ou remova a linha.`;
+    }
+
+    return null;
+  };
+
   const handleAdminLogin = async (event) => {
     event.preventDefault();
     setAuthMessage("");
@@ -450,12 +467,19 @@ const App = () => {
     const nome = normalizeServerName(serverForm.nome);
     if (!nome) return setServerMessage("Informe o nome do servidor.");
 
-    const ferias = parseDateRanges(serverForm.feriasText);
-    const impedimentos = parseDateRanges(serverForm.impedimentosText);
-    const indisponibilidadesPlantao = parseDateRanges(serverForm.indisponibilidadesPlantaoText);
-    const invalidLines = [...ferias.invalidLines, ...impedimentos.invalidLines, ...indisponibilidadesPlantao.invalidLines];
-    if (invalidLines.length > 0) {
-      return setServerMessage(`Corrija os intervalos invalidos: ${invalidLines.join(" | ")}`);
+    const feriasRows = serverForm.feriasRows || [];
+    const impedimentosRows = serverForm.impedimentosRows || [];
+    const indisponibilidadesPlantaoRows = serverForm.indisponibilidadesPlantaoRows || [];
+
+    const feriasError = validateRangeDrafts(feriasRows, "Férias");
+    if (feriasError) return setServerMessage(feriasError);
+
+    const impedimentosError = validateRangeDrafts(impedimentosRows, "Impedimentos / recusas");
+    if (impedimentosError) return setServerMessage(impedimentosError);
+
+    const indisponibilidadesError = validateRangeDrafts(indisponibilidadesPlantaoRows, "Indisponibilidades de plantão");
+    if (indisponibilidadesError) {
+      return setServerMessage(indisponibilidadesError);
     }
 
     const now = new Date().toISOString();
@@ -464,9 +488,9 @@ const App = () => {
       id: existing?.id ?? serverForm.id ?? createId(),
       nome,
       jan_only: serverForm.janOnly,
-      ferias: ferias.ranges,
-      impedimentos: impedimentos.ranges,
-      indisponibilidades_plantao: indisponibilidadesPlantao.ranges,
+      ferias: draftRangesToDateRanges(feriasRows),
+      impedimentos: draftRangesToDateRanges(impedimentosRows),
+      indisponibilidades_plantao: draftRangesToDateRanges(indisponibilidadesPlantaoRows),
       active: serverForm.active,
       created_at: existing?.created_at ?? now,
       updated_at: now,

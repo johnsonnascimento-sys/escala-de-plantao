@@ -1,6 +1,7 @@
 import { defaultServidores } from "../data/scheduleData";
 
-const DATE_RANGE_REGEX = /^(\d{4}-\d{2}-\d{2})\s*(?:a|to|-|até|ate|,)\s*(\d{4}-\d{2}-\d{2})$/i;
+const DATE_RANGE_REGEX = /^(\d{4}-\d{2}-\d{2})\s*(?:a|to|-|ate|,)\s*(\d{4}-\d{2}-\d{2})$/i;
+const createRangeId = () => globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
 export const normalizeServerName = (value) =>
   (value || "")
@@ -14,6 +15,24 @@ export const normalizeDateRanges = (ranges = []) =>
     .map(([start, end]) => [String(start), String(end)]);
 
 export const serializeDateRanges = (ranges = []) => normalizeDateRanges(ranges).map(([start, end]) => `${start} a ${end}`).join("\n");
+
+export const createDateRangeDraft = (start = "", end = "", id = createRangeId()) => ({
+  id,
+  start: String(start ?? ""),
+  end: String(end ?? ""),
+});
+
+export const normalizeDateRangeDrafts = (drafts = []) =>
+  (Array.isArray(drafts) ? drafts : [])
+    .filter((draft) => draft && typeof draft === "object")
+    .map((draft) => createDateRangeDraft(draft.start, draft.end, draft.id ?? createRangeId()));
+
+export const dateRangesToDrafts = (ranges = []) => normalizeDateRanges(ranges).map(([start, end]) => createDateRangeDraft(start, end));
+
+export const draftRangesToDateRanges = (drafts = []) =>
+  normalizeDateRangeDrafts(drafts)
+    .map(({ start, end }) => [String(start).trim(), String(end).trim()])
+    .filter(([start, end]) => Boolean(start) || Boolean(end));
 
 export const parseDateRanges = (text = "") => {
   const lines = String(text)
@@ -76,7 +95,7 @@ export const serverToFormState = (server = null) => ({
   nome: server?.nome ?? "",
   janOnly: server?.janOnly ?? false,
   active: server?.active !== false,
-  feriasText: serializeDateRanges(server?.ferias ?? []),
-  impedimentosText: serializeDateRanges(server?.impedimentos ?? []),
-  indisponibilidadesPlantaoText: serializeDateRanges(server?.indisponibilidadesPlantao ?? []),
+  feriasRows: dateRangesToDrafts(server?.ferias ?? []),
+  impedimentosRows: dateRangesToDrafts(server?.impedimentos ?? []),
+  indisponibilidadesPlantaoRows: dateRangesToDrafts(server?.indisponibilidadesPlantao ?? []),
 });
