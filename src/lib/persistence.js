@@ -7,16 +7,33 @@ export const STORAGE_KEYS = {
 
 const SUPABASE_TABLE = "escala_app_state";
 const SUPABASE_ROW_ID = "current";
+const FALLBACK_SUPABASE_CONFIG = {
+  url: "https://jqkvqxpwbvbywjptuext.supabase.co",
+  anonKey: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Impxa3ZxeHB3YnZieXdqcHR1ZXh0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA0MjEyMDEsImV4cCI6MjA5NTk5NzIwMX0.cN00Vxzuti3lBb4FAdmAlpdo-gywN_Ri-7KJw39jRNU",
+};
 
 const normalizePersistedPayload = (payload) => ({
   overrides: Array.isArray(payload?.overrides) ? payload.overrides : [],
   servers: Array.isArray(payload?.servers) ? payload.servers : [],
 });
 
+const isGitHubPagesHost = () => {
+  try {
+    return globalThis.location?.hostname?.endsWith("github.io") ?? false;
+  } catch {
+    return false;
+  }
+};
+
 const getSupabaseConfig = () => {
   const url = import.meta.env.VITE_SUPABASE_URL?.trim();
   const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY?.trim();
-  return url && anonKey ? { url, anonKey } : null;
+
+  if (isGitHubPagesHost()) {
+    return FALLBACK_SUPABASE_CONFIG;
+  }
+
+  return url && anonKey ? { url, anonKey } : FALLBACK_SUPABASE_CONFIG;
 };
 
 let supabaseClient = null;

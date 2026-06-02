@@ -24,6 +24,7 @@ VITE_SUPABASE_ANON_KEY=<sua-chave-anon>
 ```
 
 Sem essas variaveis, o sistema continua funcionando apenas com `localStorage`.
+Na publicacao em GitHub Pages, o app usa a configuracao publica embutida do projeto para manter a sincronizacao ativa.
 
 ### Migração SQL
 
