@@ -1,10 +1,13 @@
 create table if not exists public.escala_app_state (
-  id text primary key,
+  id text primary key check (id = 'current'),
   payload jsonb not null,
   updated_at timestamptz not null default now()
 );
 
 alter table public.escala_app_state enable row level security;
+
+grant usage on schema public to anon, service_role;
+grant select, insert, update on public.escala_app_state to anon, service_role;
 
 do $$
 begin
@@ -19,7 +22,7 @@ begin
     on public.escala_app_state
     for select
     to anon
-    using (true);
+    using (id = 'current');
   end if;
 end $$;
 
@@ -36,7 +39,7 @@ begin
     on public.escala_app_state
     for insert
     to anon
-    with check (true);
+    with check (id = 'current');
   end if;
 end $$;
 
@@ -53,7 +56,7 @@ begin
     on public.escala_app_state
     for update
     to anon
-    using (true)
-    with check (true);
+    using (id = 'current')
+    with check (id = 'current');
   end if;
 end $$;

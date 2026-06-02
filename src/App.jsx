@@ -204,23 +204,24 @@ const TabFeriados = () => (
 );
 
 const App = () => {
+  const hasRemotePersistence = isRemotePersistenceConfigured();
   const [activeTab, setActiveTab] = useState("escala");
   const [mesAtivo, setMesAtivo] = useState(new Date().getMonth());
   const [servidorSelecionado, setServidorSelecionado] = useState("Todos");
-  const [overrides, setOverrides] = useState(() => readStoredJson(STORAGE_KEYS.overrides, []).map(normalizeOverrideRecord));
+  const [overrides, setOverrides] = useState(() => (hasRemotePersistence ? [] : readStoredJson(STORAGE_KEYS.overrides, []).map(normalizeOverrideRecord)));
   const [formState, setFormState] = useState(createEmptyForm());
   const [formMessage, setFormMessage] = useState("");
   const [adminFilterMonth, setAdminFilterMonth] = useState(new Date().getMonth());
   const [adminDateFilter, setAdminDateFilter] = useState("");
   const [adminSection, setAdminSection] = useState("schedule");
-  const [serverRows, setServerRows] = useState(() => readStoredJson(STORAGE_KEYS.servers, []).map(normalizeServerRecord));
+  const [serverRows, setServerRows] = useState(() => (hasRemotePersistence ? [] : readStoredJson(STORAGE_KEYS.servers, []).map(normalizeServerRecord)));
   const [serverForm, setServerForm] = useState(createServerForm());
   const [serverMessage, setServerMessage] = useState("");
   const [selectedDrawDate, setSelectedDrawDate] = useState("");
   const [eligibleServers, setEligibleServers] = useState([]);
   const [drawMessage, setDrawMessage] = useState("");
   const [drawing, setDrawing] = useState(false);
-  const [persistenceMessage, setPersistenceMessage] = useState(isRemotePersistenceConfigured() ? "Carregando persistencia remota..." : "Persistindo somente neste navegador.");
+  const [persistenceMessage, setPersistenceMessage] = useState(hasRemotePersistence ? "Carregando persistencia remota..." : "Persistindo somente neste navegador.");
   const overridesRef = useRef(overrides);
   const serverRowsRef = useRef(serverRows);
 

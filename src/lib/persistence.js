@@ -8,6 +8,11 @@ export const STORAGE_KEYS = {
 const SUPABASE_TABLE = "escala_app_state";
 const SUPABASE_ROW_ID = "current";
 
+const normalizePersistedPayload = (payload) => ({
+  overrides: Array.isArray(payload?.overrides) ? payload.overrides : [],
+  servers: Array.isArray(payload?.servers) ? payload.servers : [],
+});
+
 const getSupabaseConfig = () => {
   const url = import.meta.env.VITE_SUPABASE_URL?.trim();
   const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY?.trim();
@@ -90,7 +95,7 @@ export const loadPersistedAppState = async () => {
       };
     }
 
-    if (!data?.payload) {
+    if (!data?.payload || typeof data.payload !== "object") {
       return {
         source: "local",
         remoteConfigured: true,
@@ -99,12 +104,14 @@ export const loadPersistedAppState = async () => {
       };
     }
 
+    const nextState = normalizePersistedPayload(data.payload);
+
     return {
       source: "remote",
       remoteConfigured: true,
       remoteUpdatedAt: data.updated_at ?? null,
-      overrides: Array.isArray(data.payload.overrides) ? data.payload.overrides : [],
-      servers: Array.isArray(data.payload.servers) ? data.payload.servers : [],
+      overrides: nextState.overrides,
+      servers: nextState.servers,
     };
   } catch (error) {
     return {
