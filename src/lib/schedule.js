@@ -52,9 +52,6 @@ export const getDisponibilidadeMensagem = (servidores, nome, data) => {
   if (isEmFerias(servidor, data)) return `${servidor.nome} esta de ferias nesta data.`;
   if (isImpedido(servidor, data)) return `${servidor.nome} possui impedimento/recusa nesta data.`;
   if (isIndisponivelPlantao(servidor, data)) return `${servidor.nome} esta temporariamente fora da escala e este dia deve ficar a definir por sorteio.`;
-  if (servidor.janOnly && Number(data.split("-")[1]) !== 1) {
-    return `${servidor.nome} esta restrito(a) a Janeiro.`;
-  }
   return null;
 };
 
@@ -66,7 +63,6 @@ export const buildBaseSchedule = (plantoesBase, servidores) => {
 
   return plantoesBase.map((plantao) => {
     const { pontos, valor } = getPlantaoMeta(plantao.tipo);
-    const mes = Number(plantao.data.split("-")[1]) - 1;
     let servidorEscolhido = plantao.fixo || null;
     let notes = "";
 
@@ -80,9 +76,8 @@ export const buildBaseSchedule = (plantoesBase, servidores) => {
 
     if (!servidorEscolhido) {
       const disponiveis = servidores
-        .filter((servidor) => {
+      .filter((servidor) => {
           if (servidor.active === false) return false;
-          if (servidor.janOnly && mes !== 0) return false;
           if (isEmFerias(servidor, plantao.data)) return false;
           if (isImpedido(servidor, plantao.data)) return false;
           if (isIndisponivelPlantao(servidor, plantao.data)) return false;

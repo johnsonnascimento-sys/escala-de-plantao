@@ -60,7 +60,6 @@ export const parseDateRanges = (text = "") => {
 export const normalizeServerRecord = (server) => ({
   id: server.id ?? null,
   nome: normalizeServerName(server.nome),
-  janOnly: Boolean(server.janOnly ?? server.jan_only ?? false),
   ferias: normalizeDateRanges(server.ferias),
   impedimentos: normalizeDateRanges(server.impedimentos),
   indisponibilidadesPlantao: normalizeDateRanges(server.indisponibilidadesPlantao ?? server.indisponibilidades_plantao),
@@ -93,7 +92,6 @@ export const mergeServerLists = (defaultServers = defaultServidores, persistedSe
 export const serverToFormState = (server = null) => ({
   id: server?.id ?? null,
   nome: server?.nome ?? "",
-  janOnly: server?.janOnly ?? false,
   active: server?.active !== false,
   feriasRows: dateRangesToDrafts(server?.ferias ?? []),
   impedimentosRows: dateRangesToDrafts(server?.impedimentos ?? []),

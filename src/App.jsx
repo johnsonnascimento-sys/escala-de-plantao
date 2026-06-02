@@ -138,7 +138,7 @@ const TabEscala = ({ servidores, servidorSelecionado, setServidorSelecionado, me
         </div>
         <div className="bg-slate-900 rounded-3xl p-5 text-slate-300 text-[10px] space-y-3">
           <h3 className="font-bold text-white text-xs flex items-center gap-2"><CheckCircle2 size={14} className="text-emerald-400" /> Regras ativas</h3>
-          <p>Claudia apenas Janeiro.</p>
+          <p>Claudia esta bloqueada por impedimento ate 31/12/2026.</p>
           <p>Equidade: Sabado = 3, Domingo/Feriado = 4.</p>
           <p>Andre Luis fica fora do plantao entre 13/04 e 14/08/2026; nesses casos a escala fica a definir por sorteio.</p>
           <p>Overrides locais substituem a escala base quando cadastrados neste navegador.</p>
@@ -487,7 +487,6 @@ const App = () => {
     const payload = normalizeServerRecord({
       id: existing?.id ?? serverForm.id ?? createId(),
       nome,
-      jan_only: serverForm.janOnly,
       ferias: draftRangesToDateRanges(feriasRows),
       impedimentos: draftRangesToDateRanges(impedimentosRows),
       indisponibilidades_plantao: draftRangesToDateRanges(indisponibilidadesPlantaoRows),
