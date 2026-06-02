@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertCircle,
   Briefcase,
@@ -35,33 +35,16 @@ import {
   validateOverride,
 } from "./lib/schedule";
 import { mergeServerLists, normalizeServerName, normalizeServerRecord, parseDateRanges, serverToFormState } from "./lib/servers";
+import {
+  isRemotePersistenceConfigured,
+  loadPersistedAppState,
+  readStoredJson,
+  savePersistedAppState,
+  STORAGE_KEYS,
+  writeLocalAppState,
+} from "./lib/persistence";
 
-const STORAGE_KEYS = {
-  overrides: "escala.overrides.v1",
-  servers: "escala.servers.v1",
-};
-
-const createId = () =>
-  globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-
-const readStoredJson = (key, fallback) => {
-  try {
-    const raw = localStorage.getItem(key);
-    if (!raw) return fallback;
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : fallback;
-  } catch {
-    return fallback;
-  }
-};
-
-const writeStoredJson = (key, value) => {
-  try {
-    localStorage.setItem(key, JSON.stringify(value));
-  } catch {
-    // Local storage is best-effort only.
-  }
-};
+const createId = () => globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
 const normalizeOverrideRecord = (override, index = 0) => ({
   id: override.id ?? `${override.date || "override"}-${index}-${createId()}`,
@@ -237,14 +220,58 @@ const App = () => {
   const [eligibleServers, setEligibleServers] = useState([]);
   const [drawMessage, setDrawMessage] = useState("");
   const [drawing, setDrawing] = useState(false);
+  const [persistenceMessage, setPersistenceMessage] = useState(isRemotePersistenceConfigured() ? "Carregando persistencia remota..." : "Persistindo somente neste navegador.");
+  const overridesRef = useRef(overrides);
+  const serverRowsRef = useRef(serverRows);
 
   useEffect(() => {
-    writeStoredJson(STORAGE_KEYS.overrides, overrides);
+    overridesRef.current = overrides;
   }, [overrides]);
 
   useEffect(() => {
-    writeStoredJson(STORAGE_KEYS.servers, serverRows);
+    serverRowsRef.current = serverRows;
   }, [serverRows]);
+
+  useEffect(() => {
+    let active = true;
+
+    (async () => {
+      const persisted = await loadPersistedAppState();
+      if (!active) return;
+
+      const nextOverrides = (persisted.overrides || []).map(normalizeOverrideRecord);
+      const nextServers = (persisted.servers || []).map(normalizeServerRecord);
+
+      if (persisted.source === "remote") {
+        setOverrides(nextOverrides);
+        setServerRows(nextServers);
+        overridesRef.current = nextOverrides;
+        serverRowsRef.current = nextServers;
+        writeLocalAppState({ overrides: nextOverrides, servers: nextServers });
+        setPersistenceMessage(
+          persisted.remoteUpdatedAt
+            ? `Persistencia remota ativa. Ultima sincronizacao em ${new Date(persisted.remoteUpdatedAt).toLocaleString("pt-BR")}.`
+            : "Persistencia remota ativa e sincronizada.",
+        );
+      } else if (persisted.remoteConfigured && !persisted.remoteError) {
+        setPersistenceMessage("Banco remoto configurado, mas sem dados. O cache local sera sincronizado.");
+        if (nextOverrides.length > 0 || nextServers.length > 0) {
+          void savePersistedAppState({ overrides: nextOverrides, servers: nextServers }).then((result) => {
+            if (!active) return;
+            setPersistenceMessage(result.remoteSaved ? "Cache local sincronizado com o banco remoto." : "Cache local salvo, mas a sincronizacao remota falhou.");
+          });
+        }
+      } else if (persisted.remoteError) {
+        setPersistenceMessage(`Persistencia remota indisponivel. Usando cache local. ${persisted.remoteError}`);
+      } else {
+        setPersistenceMessage("Persistindo somente neste navegador.");
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const servidores = useMemo(() => mergeServerLists(defaultServidores, serverRows), [serverRows]);
   const escalaBase = useMemo(() => buildBaseSchedule(plantoesBase, servidores), [servidores]);
@@ -331,6 +358,18 @@ const App = () => {
     setServerMessage("");
   };
 
+  const persistSnapshot = async (nextOverrides, nextServers) => {
+    const result = await savePersistedAppState({ overrides: nextOverrides, servers: nextServers });
+    if (result.remoteConfigured) {
+      setPersistenceMessage(
+        result.remoteSaved ? "Salvo localmente e sincronizado com o banco remoto." : `Salvo localmente, mas a sincronizacao remota falhou. ${result.remoteError || ""}`.trim(),
+      );
+    } else {
+      setPersistenceMessage("Persistido somente neste navegador.");
+    }
+    return result;
+  };
+
   const saveServer = async () => {
     const nome = normalizeServerName(serverForm.nome);
     if (!nome) return setServerMessage("Informe o nome do servidor.");
@@ -344,7 +383,7 @@ const App = () => {
     }
 
     const now = new Date().toISOString();
-    const existing = serverForm.id ? serverRows.find((item) => item.id === serverForm.id) : serverRows.find((item) => normalizeServerName(item.nome) === nome);
+    const existing = serverForm.id ? serverRowsRef.current.find((item) => item.id === serverForm.id) : serverRowsRef.current.find((item) => normalizeServerName(item.nome) === nome);
     const payload = normalizeServerRecord({
       id: existing?.id ?? serverForm.id ?? createId(),
       nome,
@@ -357,10 +396,13 @@ const App = () => {
       updated_at: now,
     });
 
-    setServerRows((current) => {
+    const nextServers = (() => {
+      const current = serverRowsRef.current;
       const next = current.filter((item) => item.id !== payload.id && normalizeServerName(item.nome) !== nome);
       return [...next, payload].sort((a, b) => a.nome.localeCompare(b.nome));
-    });
+    })();
+    setServerRows(nextServers);
+    await persistSnapshot(overridesRef.current, nextServers);
     setServerForm(createServerForm());
     setServerMessage("Servidor salvo com sucesso.");
   };
@@ -370,7 +412,9 @@ const App = () => {
       return setServerMessage("Este servidor faz parte da base padrao. Edite-o para criar uma sobreposicao ou adicione um servidor novo.");
     }
 
-    setServerRows((current) => current.filter((item) => item.id !== server.id));
+    const nextServers = serverRowsRef.current.filter((item) => item.id !== server.id);
+    setServerRows(nextServers);
+    await persistSnapshot(overridesRef.current, nextServers);
     if (serverForm.id === server.id) resetServerForm();
     setServerMessage("Servidor removido com sucesso.");
   };
@@ -380,7 +424,7 @@ const App = () => {
     if (validationError) return setFormMessage(validationError);
 
     const now = new Date().toISOString();
-    const existing = formState.id ? overrides.find((item) => item.id === formState.id) : null;
+    const existing = formState.id ? overridesRef.current.find((item) => item.id === formState.id) : null;
     const payload = normalizeOverrideRecord({
       id: existing?.id ?? formState.id ?? createId(),
       date: formState.date,
@@ -394,13 +438,16 @@ const App = () => {
       updated_at: now,
     });
 
-    setOverrides((current) => {
+    const nextOverrides = (() => {
+      const current = overridesRef.current;
       const next = current.filter((item) => item.id !== payload.id);
       return [...next, payload].sort((a, b) => {
         if (a.date === b.date) return new Date(a.updated_at || a.created_at || 0) - new Date(b.updated_at || b.created_at || 0);
         return a.date.localeCompare(b.date);
       });
-    });
+    })();
+    setOverrides(nextOverrides);
+    await persistSnapshot(nextOverrides, serverRowsRef.current);
     setFormState(createEmptyForm());
     setFormMessage("Override salvo com sucesso.");
   };
@@ -440,13 +487,16 @@ const App = () => {
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     });
-    setOverrides((current) => {
+    const nextOverrides = (() => {
+      const current = overridesRef.current;
       const next = current.filter((item) => item.id !== payload.id);
       return [...next, payload].sort((a, b) => {
         if (a.date === b.date) return new Date(a.updated_at || a.created_at || 0) - new Date(b.updated_at || b.created_at || 0);
         return a.date.localeCompare(b.date);
       });
-    });
+    })();
+    setOverrides(nextOverrides);
+    await persistSnapshot(nextOverrides, serverRowsRef.current);
     setDrawing(false);
     setDrawMessage(`Sorteio concluido. Servidor sorteado: ${sorteado.nome}.`);
     setSelectedDrawDate("");
@@ -477,7 +527,7 @@ const App = () => {
             <div>
               <h1 className="text-3xl font-black text-slate-800 tracking-tight">Escala de Plantao 2026</h1>
               <p className="text-slate-500 font-medium">Gestao integrada de plantoes, ferias e ajustes manuais locais</p>
-              <p className="text-slate-400 text-xs font-medium mt-1">Dados salvos apenas neste navegador. {`Escala consolidada com ${overrides.length} override(s)`}</p>
+              <p className="text-slate-400 text-xs font-medium mt-1">{persistenceMessage} {`Escala consolidada com ${overrides.length} override(s)`}</p>
             </div>
           </div>
           <button onClick={exportToPDF} className="w-full md:w-auto flex items-center justify-center gap-2 px-6 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl text-sm font-bold transition-all shadow-lg shadow-indigo-100">
