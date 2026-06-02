@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertCircle,
   Briefcase,
@@ -11,6 +11,7 @@ import {
   Filter,
   Flag,
   Info,
+  Database,
   LayoutDashboard,
   Palmtree,
   PencilLine,
@@ -24,6 +25,7 @@ import {
 } from "lucide-react";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
+import AdminDatabasePanel from "./components/AdminDatabasePanel";
 import AdminDrawPanel from "./components/AdminDrawPanel";
 import AdminServersPanel from "./components/AdminServersPanel";
 import PlantaoCard from "./components/PlantaoCard";
@@ -41,9 +43,11 @@ import { draftRangesToDateRanges, mergeServerLists, normalizeServerName, normali
 import {
   getCurrentAdminUser,
   isRemotePersistenceConfigured,
+  loadDatabaseHealthcheckLogs,
   loadPersistedAppState,
   readStoredJson,
   savePersistedAppState,
+  runDatabaseHealthcheck,
   STORAGE_KEYS,
   signInAdmin,
   signOutAdmin,
@@ -234,6 +238,10 @@ const App = () => {
   const [authMessage, setAuthMessage] = useState("");
   const [authEmail, setAuthEmail] = useState("");
   const [authPassword, setAuthPassword] = useState("");
+  const [healthcheckLogs, setHealthcheckLogs] = useState([]);
+  const [healthcheckLoading, setHealthcheckLoading] = useState(false);
+  const [healthcheckMessage, setHealthcheckMessage] = useState("");
+  const [healthcheckRunning, setHealthcheckRunning] = useState(false);
   const overridesRef = useRef(overrides);
   const serverRowsRef = useRef(serverRows);
 
@@ -334,6 +342,14 @@ const App = () => {
   const selectedPendingShift = useMemo(() => plantoesPendentes.find((item) => item.data === selectedDrawDate) || null, [plantoesPendentes, selectedDrawDate]);
   const canEdit = Boolean(adminUser);
 
+  useEffect(() => {
+    if (!canEdit || adminSection !== "database") {
+      return;
+    }
+
+    void refreshHealthcheckLogs({ silent: true });
+  }, [adminSection, canEdit, refreshHealthcheckLogs]);
+
   const buildEligibleServers = (date, preservedSelection = []) =>
     servidores
       .filter((servidor) => servidor.active !== false)
@@ -411,6 +427,49 @@ const App = () => {
     }
     return result;
   };
+
+  const refreshHealthcheckLogs = useCallback(async ({ silent = false } = {}) => {
+    setHealthcheckLoading(true);
+
+    try {
+      const result = await loadDatabaseHealthcheckLogs({ limit: 10 });
+      setHealthcheckLogs(result.logs || []);
+
+      if (result.remoteError) {
+        setHealthcheckMessage(`Nao foi possivel carregar os logs de teste: ${result.remoteError}`);
+      } else if (!silent && result.remoteConfigured && (result.logs || []).length === 0) {
+        setHealthcheckMessage("Nenhum teste de banco registrado ainda.");
+      }
+    } finally {
+      setHealthcheckLoading(false);
+    }
+  }, []);
+
+  const handleRunDatabaseHealthcheck = useCallback(async () => {
+    if (!canEdit || healthcheckRunning) return;
+
+    setHealthcheckRunning(true);
+    setHealthcheckMessage("Executando teste manual no banco...");
+
+    try {
+      const result = await runDatabaseHealthcheck({ source: "manual" });
+
+      if (!result.remoteConfigured) {
+        setHealthcheckMessage(result.message || "Supabase nao configurado.");
+        return;
+      }
+
+      const baseMessage =
+        result.status === "ok"
+          ? `Teste concluido com sucesso em ${result.duration_ms} ms.`
+          : `Teste concluido com falha: ${result.details || result.message}`;
+      setHealthcheckMessage(result.remoteSaved ? baseMessage : `${baseMessage} O log nao foi gravado: ${result.remoteError || "erro desconhecido"}`);
+
+      await refreshHealthcheckLogs({ silent: true });
+    } finally {
+      setHealthcheckRunning(false);
+    }
+  }, [canEdit, healthcheckRunning, refreshHealthcheckLogs]);
 
   const validateRangeDrafts = (rows = [], label = "") => {
     const invalidIndexes = rows
@@ -662,7 +721,7 @@ const App = () => {
               <div className="bg-white rounded-3xl border border-slate-200 p-5 shadow-sm flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
                 <div>
                   <p className="text-[11px] font-black uppercase tracking-[0.2em] text-indigo-600">Painel administrativo local</p>
-                  <h2 className="text-2xl font-black text-slate-800">{adminSection === "schedule" ? "Edicao da escala" : adminSection === "servers" ? "Cadastro de servidores" : "Ferramenta de sorteio"}</h2>
+	                  <h2 className="text-2xl font-black text-slate-800">{adminSection === "schedule" ? "Edicao da escala" : adminSection === "servers" ? "Cadastro de servidores" : adminSection === "draw" ? "Ferramenta de sorteio" : "Teste de banco de dados"}</h2>
                   <p className="text-sm text-slate-500">{canEdit ? `Autenticado como ${adminUser?.email || "administrador"}.` : "Acesso restrito. Faça login para editar."}</p>
                 </div>
                 <div className="flex gap-2 flex-wrap">
@@ -677,11 +736,14 @@ const App = () => {
                   <button disabled={!canEdit} onClick={() => setAdminSection("servers")} className={`rounded-2xl px-4 py-3 text-sm font-bold flex items-center gap-2 ${adminSection === "servers" ? "bg-emerald-600 text-white" : "border border-slate-200 text-slate-600 hover:bg-slate-50"} ${!canEdit ? "opacity-50 cursor-not-allowed hover:bg-transparent" : ""}`}>
                     <Users size={16} /> Servidores
                   </button>
-                  <button disabled={!canEdit} onClick={() => setAdminSection("draw")} className={`rounded-2xl px-4 py-3 text-sm font-bold flex items-center gap-2 ${adminSection === "draw" ? "bg-amber-500 text-white" : "border border-slate-200 text-slate-600 hover:bg-slate-50"} ${!canEdit ? "opacity-50 cursor-not-allowed hover:bg-transparent" : ""}`}>
-                    <Users size={16} /> Sorteio
-                  </button>
-                </div>
-              </div>
+	                  <button disabled={!canEdit} onClick={() => setAdminSection("draw")} className={`rounded-2xl px-4 py-3 text-sm font-bold flex items-center gap-2 ${adminSection === "draw" ? "bg-amber-500 text-white" : "border border-slate-200 text-slate-600 hover:bg-slate-50"} ${!canEdit ? "opacity-50 cursor-not-allowed hover:bg-transparent" : ""}`}>
+	                    <Users size={16} /> Sorteio
+	                  </button>
+	                  <button disabled={!canEdit} onClick={() => setAdminSection("database")} className={`rounded-2xl px-4 py-3 text-sm font-bold flex items-center gap-2 ${adminSection === "database" ? "bg-indigo-600 text-white" : "border border-slate-200 text-slate-600 hover:bg-slate-50"} ${!canEdit ? "opacity-50 cursor-not-allowed hover:bg-transparent" : ""}`}>
+	                    <Database size={16} /> Banco
+	                  </button>
+	                </div>
+	              </div>
 
               {authLoading ? (
                 <div className="bg-white rounded-3xl border border-slate-200 p-8 shadow-sm">
@@ -831,23 +893,34 @@ const App = () => {
                 </div>
               )}
 
-              {canEdit && adminSection === "servers" && (
-                <AdminServersPanel
-                  servidores={servidores}
-                  loadingServers={false}
-                  serverForm={serverForm}
+	              {canEdit && adminSection === "servers" && (
+	                <AdminServersPanel
+	                  servidores={servidores}
+	                  loadingServers={false}
+	                  serverForm={serverForm}
                   setServerForm={setServerForm}
                   serverMessage={serverMessage}
                   saveServer={saveServer}
                   savingServer={false}
-                  resetServerForm={resetServerForm}
-                  deleteServer={deleteServer}
-                />
-              )}
+	                  resetServerForm={resetServerForm}
+	                  deleteServer={deleteServer}
+	                />
+	              )}
 
-              {canEdit && adminSection === "draw" && (
-                <AdminDrawPanel
-                  pendingShifts={plantoesPendentes}
+	              {canEdit && adminSection === "database" && (
+	                <AdminDatabasePanel
+	                  healthcheckLogs={healthcheckLogs}
+	                  loadingHealthcheckLogs={healthcheckLoading}
+	                  healthcheckMessage={healthcheckMessage}
+	                  runningHealthcheck={healthcheckRunning}
+	                  runHealthcheck={handleRunDatabaseHealthcheck}
+	                  refreshHealthcheckLogs={() => refreshHealthcheckLogs({ silent: true })}
+	                />
+	              )}
+
+	              {canEdit && adminSection === "draw" && (
+	                <AdminDrawPanel
+	                  pendingShifts={plantoesPendentes}
                   selectedPendingShift={selectedPendingShift}
                   selectedDrawDate={selectedDrawDate}
                   selectPendingShift={selectPendingShift}

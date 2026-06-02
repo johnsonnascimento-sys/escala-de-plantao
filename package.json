@@ -7,6 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "eslint .",
+    "healthcheck:supabase": "node scripts/check_supabase_health.js",
     "preview": "vite preview"
   },
   "dependencies": {
