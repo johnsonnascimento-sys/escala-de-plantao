@@ -14,6 +14,9 @@ import {
   LayoutDashboard,
   Palmtree,
   PencilLine,
+  Lock,
+  LogIn,
+  LogOut,
   PlusCircle,
   Save,
   Users,
@@ -36,11 +39,15 @@ import {
 } from "./lib/schedule";
 import { mergeServerLists, normalizeServerName, normalizeServerRecord, parseDateRanges, serverToFormState } from "./lib/servers";
 import {
+  getCurrentAdminUser,
   isRemotePersistenceConfigured,
   loadPersistedAppState,
   readStoredJson,
   savePersistedAppState,
   STORAGE_KEYS,
+  signInAdmin,
+  signOutAdmin,
+  subscribeAuthState,
   writeLocalAppState,
 } from "./lib/persistence";
 
@@ -222,6 +229,11 @@ const App = () => {
   const [drawMessage, setDrawMessage] = useState("");
   const [drawing, setDrawing] = useState(false);
   const [persistenceMessage, setPersistenceMessage] = useState(hasRemotePersistence ? "Carregando persistencia remota..." : "Persistindo somente neste navegador.");
+  const [adminUser, setAdminUser] = useState(null);
+  const [authLoading, setAuthLoading] = useState(true);
+  const [authMessage, setAuthMessage] = useState("");
+  const [authEmail, setAuthEmail] = useState("");
+  const [authPassword, setAuthPassword] = useState("");
   const overridesRef = useRef(overrides);
   const serverRowsRef = useRef(serverRows);
 
@@ -232,6 +244,34 @@ const App = () => {
   useEffect(() => {
     serverRowsRef.current = serverRows;
   }, [serverRows]);
+
+  useEffect(() => {
+    let active = true;
+
+    (async () => {
+      if (!hasRemotePersistence) {
+        if (active) setAuthLoading(false);
+        return;
+      }
+
+      const user = await getCurrentAdminUser();
+      if (!active) return;
+
+      setAdminUser(user);
+      setAuthLoading(false);
+    })();
+
+    const unsubscribe = subscribeAuthState((_, session) => {
+      if (!active) return;
+      setAdminUser(session?.user ?? null);
+      setAuthLoading(false);
+    });
+
+    return () => {
+      active = false;
+      unsubscribe();
+    };
+  }, [hasRemotePersistence]);
 
   useEffect(() => {
     let active = true;
@@ -292,6 +332,7 @@ const App = () => {
     [adminDateFilter, adminFilterMonth, escalaTotal],
   );
   const selectedPendingShift = useMemo(() => plantoesPendentes.find((item) => item.data === selectedDrawDate) || null, [plantoesPendentes, selectedDrawDate]);
+  const canEdit = Boolean(adminUser);
 
   const buildEligibleServers = (date, preservedSelection = []) =>
     servidores
@@ -371,7 +412,41 @@ const App = () => {
     return result;
   };
 
+  const handleAdminLogin = async (event) => {
+    event.preventDefault();
+    setAuthMessage("");
+
+    if (!authEmail.trim() || !authPassword.trim()) {
+      setAuthMessage("Informe e-mail e senha para entrar.");
+      return;
+    }
+
+    const { error } = await signInAdmin({ email: authEmail.trim(), password: authPassword });
+    if (error) {
+      setAuthMessage(error.message || "Nao foi possivel entrar.");
+      return;
+    }
+
+    setAuthPassword("");
+  };
+
+  const handleAdminLogout = async () => {
+    const { error } = await signOutAdmin();
+    if (error) {
+      setAuthMessage(error.message || "Nao foi possivel sair.");
+      return;
+    }
+
+    setAdminUser(null);
+    setAuthPassword("");
+    setAuthMessage("");
+  };
+
   const saveServer = async () => {
+    if (!canEdit) {
+      return setServerMessage("Faça login de administrador para alterar servidores.");
+    }
+
     const nome = normalizeServerName(serverForm.nome);
     if (!nome) return setServerMessage("Informe o nome do servidor.");
 
@@ -409,6 +484,10 @@ const App = () => {
   };
 
   const deleteServer = async (server) => {
+    if (!canEdit) {
+      return setServerMessage("Faça login de administrador para remover servidores.");
+    }
+
     if (!server.id) {
       return setServerMessage("Este servidor faz parte da base padrao. Edite-o para criar uma sobreposicao ou adicione um servidor novo.");
     }
@@ -421,6 +500,10 @@ const App = () => {
   };
 
   const saveOverride = async () => {
+    if (!canEdit) {
+      return setFormMessage("Faça login de administrador para salvar alteracoes.");
+    }
+
     const validationError = validateOverride(formState, escalaBase);
     if (validationError) return setFormMessage(validationError);
 
@@ -469,6 +552,10 @@ const App = () => {
   };
 
   const runDraw = async () => {
+    if (!canEdit) {
+      return setDrawMessage("Faça login de administrador para executar o sorteio.");
+    }
+
     if (!selectedPendingShift) return setDrawMessage("Selecione um plantao pendente para sortear.");
     const participantes = eligibleServers.filter((item) => item.selected);
     if (participantes.length === 0) return setDrawMessage("Selecione ao menos um servidor para participar do sorteio.");
@@ -553,22 +640,80 @@ const App = () => {
                 <div>
                   <p className="text-[11px] font-black uppercase tracking-[0.2em] text-indigo-600">Painel administrativo local</p>
                   <h2 className="text-2xl font-black text-slate-800">{adminSection === "schedule" ? "Edicao da escala" : adminSection === "servers" ? "Cadastro de servidores" : "Ferramenta de sorteio"}</h2>
-                  <p className="text-sm text-slate-500">Sem autenticacao. Tudo fica salvo neste navegador.</p>
+                  <p className="text-sm text-slate-500">{canEdit ? `Autenticado como ${adminUser?.email || "administrador"}.` : "Acesso restrito. Faça login para editar."}</p>
                 </div>
                 <div className="flex gap-2 flex-wrap">
-                  <button onClick={() => setAdminSection("schedule")} className={`rounded-2xl px-4 py-3 text-sm font-bold flex items-center gap-2 ${adminSection === "schedule" ? "bg-indigo-600 text-white" : "border border-slate-200 text-slate-600 hover:bg-slate-50"}`}>
+                  {canEdit && (
+                    <button onClick={handleAdminLogout} className="rounded-2xl px-4 py-3 text-sm font-bold flex items-center gap-2 border border-slate-200 text-slate-600 hover:bg-slate-50">
+                      <LogOut size={16} /> Sair
+                    </button>
+                  )}
+                  <button disabled={!canEdit} onClick={() => setAdminSection("schedule")} className={`rounded-2xl px-4 py-3 text-sm font-bold flex items-center gap-2 ${adminSection === "schedule" ? "bg-indigo-600 text-white" : "border border-slate-200 text-slate-600 hover:bg-slate-50"} ${!canEdit ? "opacity-50 cursor-not-allowed hover:bg-transparent" : ""}`}>
                     <Calendar size={16} /> Escala
                   </button>
-                  <button onClick={() => setAdminSection("servers")} className={`rounded-2xl px-4 py-3 text-sm font-bold flex items-center gap-2 ${adminSection === "servers" ? "bg-emerald-600 text-white" : "border border-slate-200 text-slate-600 hover:bg-slate-50"}`}>
+                  <button disabled={!canEdit} onClick={() => setAdminSection("servers")} className={`rounded-2xl px-4 py-3 text-sm font-bold flex items-center gap-2 ${adminSection === "servers" ? "bg-emerald-600 text-white" : "border border-slate-200 text-slate-600 hover:bg-slate-50"} ${!canEdit ? "opacity-50 cursor-not-allowed hover:bg-transparent" : ""}`}>
                     <Users size={16} /> Servidores
                   </button>
-                  <button onClick={() => setAdminSection("draw")} className={`rounded-2xl px-4 py-3 text-sm font-bold flex items-center gap-2 ${adminSection === "draw" ? "bg-amber-500 text-white" : "border border-slate-200 text-slate-600 hover:bg-slate-50"}`}>
+                  <button disabled={!canEdit} onClick={() => setAdminSection("draw")} className={`rounded-2xl px-4 py-3 text-sm font-bold flex items-center gap-2 ${adminSection === "draw" ? "bg-amber-500 text-white" : "border border-slate-200 text-slate-600 hover:bg-slate-50"} ${!canEdit ? "opacity-50 cursor-not-allowed hover:bg-transparent" : ""}`}>
                     <Users size={16} /> Sorteio
                   </button>
                 </div>
               </div>
 
-              {adminSection === "schedule" && (
+              {authLoading ? (
+                <div className="bg-white rounded-3xl border border-slate-200 p-8 shadow-sm">
+                  <div className="flex items-center gap-3 text-slate-600">
+                    <Lock size={18} className="text-indigo-500" />
+                    <span className="text-sm font-semibold">Carregando acesso administrativo...</span>
+                  </div>
+                </div>
+              ) : !canEdit ? (
+                <div className="bg-white rounded-3xl border border-slate-200 p-8 shadow-sm">
+                  <div className="max-w-lg mx-auto space-y-5">
+                    <div className="flex items-start gap-3">
+                      <div className="p-3 rounded-2xl bg-indigo-50 text-indigo-600">
+                        <Lock size={20} />
+                      </div>
+                      <div>
+                        <h3 className="text-xl font-black text-slate-800">Acesso restrito</h3>
+                        <p className="text-sm text-slate-500">O painel de edição exige login de administrador. A leitura da escala continua pública.</p>
+                      </div>
+                    </div>
+
+                    <form className="space-y-4" onSubmit={handleAdminLogin}>
+                      <label className="block text-sm font-semibold text-slate-600">
+                        E-mail
+                        <input
+                          className="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-indigo-500"
+                          type="email"
+                          value={authEmail}
+                          onChange={(event) => setAuthEmail(event.target.value)}
+                          placeholder="admin@exemplo.com"
+                          autoComplete="email"
+                        />
+                      </label>
+                      <label className="block text-sm font-semibold text-slate-600">
+                        Senha
+                        <input
+                          className="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-indigo-500"
+                          type="password"
+                          value={authPassword}
+                          onChange={(event) => setAuthPassword(event.target.value)}
+                          placeholder="Senha do administrador"
+                          autoComplete="current-password"
+                        />
+                      </label>
+                      {authMessage && <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-900">{authMessage}</div>}
+                      <button type="submit" className="w-full rounded-2xl bg-slate-900 px-4 py-3 text-sm font-bold text-white hover:bg-slate-800 flex items-center justify-center gap-2">
+                        <LogIn size={16} /> Entrar
+                      </button>
+                    </form>
+                  </div>
+                </div>
+              ) : (
+                <>
+
+              {canEdit && adminSection === "schedule" && (
                 <div className="grid grid-cols-1 xl:grid-cols-[1.15fr_0.85fr] gap-6">
                   <div className="space-y-6">
                     <div className="bg-white rounded-3xl border border-slate-200 p-5 shadow-sm space-y-4">
@@ -663,7 +808,7 @@ const App = () => {
                 </div>
               )}
 
-              {adminSection === "servers" && (
+              {canEdit && adminSection === "servers" && (
                 <AdminServersPanel
                   servidores={servidores}
                   loadingServers={false}
@@ -677,7 +822,7 @@ const App = () => {
                 />
               )}
 
-              {adminSection === "draw" && (
+              {canEdit && adminSection === "draw" && (
                 <AdminDrawPanel
                   pendingShifts={plantoesPendentes}
                   selectedPendingShift={selectedPendingShift}
@@ -690,6 +835,8 @@ const App = () => {
                   runDraw={runDraw}
                   drawing={drawing}
                 />
+              )}
+                </>
               )}
             </>
           )}

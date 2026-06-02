@@ -25,6 +25,7 @@ VITE_SUPABASE_ANON_KEY=<sua-chave-anon>
 
 Sem essas variaveis, o sistema continua funcionando apenas com `localStorage`.
 Na publicacao em GitHub Pages, o app usa a configuracao publica embutida do projeto para manter a sincronizacao ativa.
+Para editar a escala, e necessario ter um usuario cadastrado no Supabase Auth.
 
 ### Migração SQL
 
@@ -42,7 +43,9 @@ create table if not exists public.escala_app_state (
 alter table public.escala_app_state enable row level security;
 
 grant usage on schema public to anon, service_role;
-grant select, insert, update on public.escala_app_state to anon, service_role;
+grant usage on schema public to anon, authenticated, service_role;
+grant select on public.escala_app_state to anon, authenticated, service_role;
+grant insert, update on public.escala_app_state to authenticated, service_role;
 
 create policy "public read access"
 on public.escala_app_state
@@ -53,16 +56,18 @@ using (id = 'current');
 create policy "public insert access"
 on public.escala_app_state
 for insert
-to anon
+to authenticated
 with check (id = 'current');
 
 create policy "public update access"
 on public.escala_app_state
 for update
-to anon
+to authenticated
 using (id = 'current')
 with check (id = 'current');
 ```
+
+Crie um usuario administrador em `Authentication > Users` no painel do Supabase e use esse login no painel admin do app.
 
 ### Fluxo de uso
 

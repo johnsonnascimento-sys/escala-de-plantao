@@ -45,14 +45,53 @@ const getSupabaseClient = () => {
   if (!supabaseClient) {
     supabaseClient = createClient(config.url, config.anonKey, {
       auth: {
-        autoRefreshToken: false,
+        autoRefreshToken: true,
         detectSessionInUrl: false,
-        persistSession: false,
+        persistSession: true,
       },
     });
   }
 
   return supabaseClient;
+};
+
+export const getCurrentAdminUser = async () => {
+  const client = getSupabaseClient();
+  if (!client) return null;
+
+  const { data, error } = await client.auth.getUser();
+  if (error) return null;
+  return data.user ?? null;
+};
+
+export const signInAdmin = async ({ email, password }) => {
+  const client = getSupabaseClient();
+  if (!client) {
+    return { error: new Error("Supabase nao configurado.") };
+  }
+
+  return client.auth.signInWithPassword({
+    email,
+    password,
+  });
+};
+
+export const signOutAdmin = async () => {
+  const client = getSupabaseClient();
+  if (!client) return { error: new Error("Supabase nao configurado.") };
+
+  return client.auth.signOut();
+};
+
+export const subscribeAuthState = (callback) => {
+  const client = getSupabaseClient();
+  if (!client) return () => {};
+
+  const {
+    data: { subscription },
+  } = client.auth.onAuthStateChange(callback);
+
+  return () => subscription.unsubscribe();
 };
 
 export const isRemotePersistenceConfigured = () => Boolean(getSupabaseConfig());
