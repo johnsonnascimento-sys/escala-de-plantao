@@ -52,7 +52,6 @@ import {
   signInAdmin,
   signOutAdmin,
   subscribeAuthState,
-  writeLocalAppState,
 } from "./lib/persistence";
 
 const createId = () => globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`;
@@ -244,6 +243,7 @@ const App = () => {
   const [healthcheckRunning, setHealthcheckRunning] = useState(false);
   const overridesRef = useRef(overrides);
   const serverRowsRef = useRef(serverRows);
+  const mountedRef = useRef(true);
 
   useEffect(() => {
     overridesRef.current = overrides;
@@ -252,6 +252,14 @@ const App = () => {
   useEffect(() => {
     serverRowsRef.current = serverRows;
   }, [serverRows]);
+
+  useEffect(() => {
+    mountedRef.current = true;
+
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -281,46 +289,93 @@ const App = () => {
     };
   }, [hasRemotePersistence]);
 
+  const applyPersistedState = useCallback(async ({ silent = false } = {}) => {
+    const persisted = await loadPersistedAppState();
+    if (!mountedRef.current) return persisted;
+
+    const nextOverrides = (persisted.overrides || []).map(normalizeOverrideRecord);
+    const nextServers = (persisted.servers || []).map(normalizeServerRecord);
+    const nextMeta = persisted.localMeta || null;
+    const messageFromRemoteUpdatedAt = persisted.remoteUpdatedAt
+      ? `Persistencia remota ativa. Ultima sincronizacao em ${new Date(persisted.remoteUpdatedAt).toLocaleString("pt-BR")}.`
+      : "Persistencia remota ativa e sincronizada.";
+
+    if (persisted.source === "remote" || persisted.syncStatus === "resynced_local") {
+      setOverrides(nextOverrides);
+      setServerRows(nextServers);
+      overridesRef.current = nextOverrides;
+      serverRowsRef.current = nextServers;
+      setPersistenceMessage(
+        persisted.syncStatus === "resynced_local"
+          ? "Banco voltou e o cache local foi reenviado para o Supabase."
+          : messageFromRemoteUpdatedAt,
+      );
+    } else if (persisted.remoteConfigured && persisted.syncStatus === "pending_remote_sync") {
+      setOverrides(nextOverrides);
+      setServerRows(nextServers);
+      overridesRef.current = nextOverrides;
+      serverRowsRef.current = nextServers;
+      setPersistenceMessage(
+        `Banco remoto voltou, mas ainda nao aceitou a re-sincronizacao do cache local. ${persisted.remoteError || "Tentaremos novamente automaticamente."}`,
+      );
+    } else if (persisted.remoteConfigured && persisted.remoteError) {
+      setPersistenceMessage(
+        `${persisted.localMeta?.pendingRemoteSync ? "Offline com alteracoes pendentes. " : "Persistencia remota indisponivel. Usando cache local. "}${persisted.remoteError}`,
+      );
+    } else if (persisted.remoteConfigured && persisted.syncStatus === "remote_empty") {
+      setOverrides(nextOverrides);
+      setServerRows(nextServers);
+      overridesRef.current = nextOverrides;
+      serverRowsRef.current = nextServers;
+      setPersistenceMessage("Banco remoto configurado, mas sem dados. O cache local foi mantido.");
+    } else {
+      setPersistenceMessage("Persistindo somente neste navegador.");
+    }
+
+    if (!silent && nextMeta?.pendingRemoteSync) {
+      setPersistenceMessage((current) => current || "Alteracoes pendentes aguardando retorno do banco remoto.");
+    }
+
+    return persisted;
+  }, []);
+
   useEffect(() => {
-    let active = true;
+    void applyPersistedState();
 
-    (async () => {
-      const persisted = await loadPersistedAppState();
-      if (!active) return;
+    const syncNow = () => {
+      void applyPersistedState({ silent: true });
+    };
 
-      const nextOverrides = (persisted.overrides || []).map(normalizeOverrideRecord);
-      const nextServers = (persisted.servers || []).map(normalizeServerRecord);
-
-      if (persisted.source === "remote") {
-        setOverrides(nextOverrides);
-        setServerRows(nextServers);
-        overridesRef.current = nextOverrides;
-        serverRowsRef.current = nextServers;
-        writeLocalAppState({ overrides: nextOverrides, servers: nextServers });
-        setPersistenceMessage(
-          persisted.remoteUpdatedAt
-            ? `Persistencia remota ativa. Ultima sincronizacao em ${new Date(persisted.remoteUpdatedAt).toLocaleString("pt-BR")}.`
-            : "Persistencia remota ativa e sincronizada.",
-        );
-      } else if (persisted.remoteConfigured && !persisted.remoteError) {
-        setPersistenceMessage("Banco remoto configurado, mas sem dados. O cache local sera sincronizado.");
-        if (nextOverrides.length > 0 || nextServers.length > 0) {
-          void savePersistedAppState({ overrides: nextOverrides, servers: nextServers }).then((result) => {
-            if (!active) return;
-            setPersistenceMessage(result.remoteSaved ? "Cache local sincronizado com o banco remoto." : "Cache local salvo, mas a sincronizacao remota falhou.");
-          });
-        }
-      } else if (persisted.remoteError) {
-        setPersistenceMessage(`Persistencia remota indisponivel. Usando cache local. ${persisted.remoteError}`);
-      } else {
-        setPersistenceMessage("Persistindo somente neste navegador.");
+    const handleStorageChange = (event) => {
+      if (event.storageArea !== window.localStorage) {
+        return;
       }
-    })();
+
+      if (event.key === STORAGE_KEYS.overrides || event.key === STORAGE_KEYS.servers || event.key === STORAGE_KEYS.meta || event.key === null) {
+        syncNow();
+      }
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        syncNow();
+      }
+    };
+
+    const intervalId = window.setInterval(syncNow, 15000);
+    window.addEventListener("online", syncNow);
+    window.addEventListener("focus", syncNow);
+    window.addEventListener("storage", handleStorageChange);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
 
     return () => {
-      active = false;
+      window.clearInterval(intervalId);
+      window.removeEventListener("online", syncNow);
+      window.removeEventListener("focus", syncNow);
+      window.removeEventListener("storage", handleStorageChange);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
-  }, []);
+  }, [applyPersistedState]);
 
   const servidores = useMemo(() => mergeServerLists(defaultServidores, serverRows), [serverRows]);
   const escalaBase = useMemo(() => buildBaseSchedule(plantoesBase, servidores), [servidores]);
@@ -412,7 +467,9 @@ const App = () => {
     const result = await savePersistedAppState({ overrides: nextOverrides, servers: nextServers });
     if (result.remoteConfigured) {
       setPersistenceMessage(
-        result.remoteSaved ? "Salvo localmente e sincronizado com o banco remoto." : `Salvo localmente, mas a sincronizacao remota falhou. ${result.remoteError || ""}`.trim(),
+        result.remoteSaved
+          ? "Salvo localmente e sincronizado com o banco remoto."
+          : `Salvo localmente. A sincronizacao remota ficou pendente e sera refeita quando o banco voltar. ${result.remoteError || ""}`.trim(),
       );
     } else {
       setPersistenceMessage("Persistido somente neste navegador.");

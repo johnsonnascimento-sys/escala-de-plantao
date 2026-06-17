@@ -3,6 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 export const STORAGE_KEYS = {
   overrides: "escala.overrides.v1",
   servers: "escala.servers.v1",
+  meta: "escala.state.meta.v1",
 };
 
 const SUPABASE_TABLE = "escala_app_state";
@@ -16,6 +17,14 @@ const FALLBACK_SUPABASE_CONFIG = {
 const normalizePersistedPayload = (payload) => ({
   overrides: Array.isArray(payload?.overrides) ? payload.overrides : [],
   servers: Array.isArray(payload?.servers) ? payload.servers : [],
+});
+
+const normalizeLocalMeta = (meta) => ({
+  lastLocalSaveAt: typeof meta?.lastLocalSaveAt === "string" && meta.lastLocalSaveAt ? meta.lastLocalSaveAt : null,
+  lastRemoteSyncAt: typeof meta?.lastRemoteSyncAt === "string" && meta.lastRemoteSyncAt ? meta.lastRemoteSyncAt : null,
+  lastRemoteSeenAt: typeof meta?.lastRemoteSeenAt === "string" && meta.lastRemoteSeenAt ? meta.lastRemoteSeenAt : null,
+  pendingRemoteSync: Boolean(meta?.pendingRemoteSync),
+  lastSyncErrorAt: typeof meta?.lastSyncErrorAt === "string" && meta.lastSyncErrorAt ? meta.lastSyncErrorAt : null,
 });
 
 const normalizeDatabaseHealthcheckRecord = (record) => ({
@@ -36,6 +45,31 @@ const createDatabaseHealthcheckId = () => globalThis.crypto?.randomUUID?.() ?? `
 
 const isMissingHealthcheckTableError = (message = "") =>
   /could not find the table.*escala_db_healthchecks|schema cache/i.test(String(message));
+
+const parseTimestamp = (value) => {
+  if (typeof value !== "string" || !value) {
+    return null;
+  }
+
+  const parsed = Date.parse(value);
+  return Number.isNaN(parsed) ? null : parsed;
+};
+
+const isTimestampNewer = (candidate, baseline) => {
+  const candidateMs = parseTimestamp(candidate);
+  if (candidateMs === null) {
+    return false;
+  }
+
+  const baselineMs = parseTimestamp(baseline);
+  if (baselineMs === null) {
+    return true;
+  }
+
+  return candidateMs > baselineMs;
+};
+
+const hasPersistedState = (state) => Boolean(state?.overrides?.length || state?.servers?.length);
 
 const isGitHubPagesHost = () => {
   try {
@@ -127,6 +161,16 @@ export const readStoredJson = (key, fallback) => {
   }
 };
 
+export const readStoredValue = (key, fallback) => {
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return fallback;
+    return JSON.parse(raw);
+  } catch {
+    return fallback;
+  }
+};
+
 export const writeStoredJson = (key, value) => {
   try {
     localStorage.setItem(key, JSON.stringify(value));
@@ -140,19 +184,74 @@ export const readLocalAppState = () => ({
   servers: readStoredJson(STORAGE_KEYS.servers, []),
 });
 
+export const readLocalAppMeta = () => normalizeLocalMeta(readStoredValue(STORAGE_KEYS.meta, {}));
+
+export const writeLocalAppMeta = (meta) => {
+  writeStoredJson(STORAGE_KEYS.meta, normalizeLocalMeta(meta));
+};
+
 export const writeLocalAppState = ({ overrides = [], servers = [] }) => {
   writeStoredJson(STORAGE_KEYS.overrides, overrides);
   writeStoredJson(STORAGE_KEYS.servers, servers);
 };
 
+const writePersistedSnapshotLocally = ({ overrides = [], servers = [] }, meta = {}) => {
+  writeLocalAppState({ overrides, servers });
+  writeLocalAppMeta(meta);
+};
+
+const syncLocalStateToRemote = async (client, state, localMeta) => {
+  const syncedAt = new Date().toISOString();
+  const payload = {
+    overrides: state.overrides,
+    servers: state.servers,
+  };
+
+  const { error } = await client
+    .from(SUPABASE_TABLE)
+    .upsert(
+      {
+        id: SUPABASE_ROW_ID,
+        payload,
+        updated_at: syncedAt,
+      },
+      { onConflict: "id" },
+    );
+
+  if (error) {
+    return {
+      remoteSaved: false,
+      remoteError: error.message,
+      remoteSyncedAt: null,
+    };
+  }
+
+  writePersistedSnapshotLocally(state, {
+    ...localMeta,
+    lastRemoteSyncAt: syncedAt,
+    lastRemoteSeenAt: syncedAt,
+    pendingRemoteSync: false,
+    lastSyncErrorAt: null,
+  });
+
+  return {
+    remoteSaved: true,
+    remoteError: null,
+    remoteSyncedAt: syncedAt,
+  };
+};
+
 export const loadPersistedAppState = async () => {
   const localState = readLocalAppState();
+  const localMeta = readLocalAppMeta();
   const client = getSupabaseClient();
 
   if (!client) {
     return {
       source: "local",
       remoteConfigured: false,
+      syncStatus: localMeta.pendingRemoteSync ? "offline_pending" : "offline",
+      localMeta,
       overrides: localState.overrides,
       servers: localState.servers,
     };
@@ -165,27 +264,99 @@ export const loadPersistedAppState = async () => {
       return {
         source: "local",
         remoteConfigured: true,
+        syncStatus: localMeta.pendingRemoteSync ? "offline_pending" : "offline",
         remoteError: error.message,
+        localMeta,
         overrides: localState.overrides,
         servers: localState.servers,
       };
     }
 
     if (!data?.payload || typeof data.payload !== "object") {
+      if (hasPersistedState(localState)) {
+        const syncResult = await syncLocalStateToRemote(client, localState, localMeta);
+        if (syncResult.remoteSaved) {
+          return {
+            source: "local",
+            remoteConfigured: true,
+            syncStatus: "resynced_local",
+            remoteUpdatedAt: syncResult.remoteSyncedAt,
+            localMeta: readLocalAppMeta(),
+            overrides: localState.overrides,
+            servers: localState.servers,
+          };
+        }
+
+        return {
+          source: "local",
+          remoteConfigured: true,
+          syncStatus: "pending_remote_sync",
+          remoteError: syncResult.remoteError,
+          localMeta,
+          overrides: localState.overrides,
+          servers: localState.servers,
+        };
+      }
+
       return {
         source: "local",
         remoteConfigured: true,
+        syncStatus: "remote_empty",
+        localMeta,
         overrides: localState.overrides,
         servers: localState.servers,
       };
     }
 
     const nextState = normalizePersistedPayload(data.payload);
+    const remoteUpdatedAt = data.updated_at ?? null;
+
+    if (
+      hasPersistedState(localState) &&
+      (!hasPersistedState(nextState) || localMeta.pendingRemoteSync || isTimestampNewer(localMeta.lastLocalSaveAt, remoteUpdatedAt))
+    ) {
+      const syncResult = await syncLocalStateToRemote(client, localState, localMeta);
+
+      if (syncResult.remoteSaved) {
+        return {
+          source: "local",
+          remoteConfigured: true,
+          syncStatus: "resynced_local",
+          remoteUpdatedAt: syncResult.remoteSyncedAt,
+          localMeta: readLocalAppMeta(),
+          overrides: localState.overrides,
+          servers: localState.servers,
+        };
+      }
+
+      return {
+        source: "local",
+        remoteConfigured: true,
+        syncStatus: "pending_remote_sync",
+        remoteUpdatedAt,
+        remoteError: syncResult.remoteError,
+        localMeta,
+        overrides: localState.overrides,
+        servers: localState.servers,
+      };
+    }
+
+    if (hasPersistedState(nextState) || !hasPersistedState(localState)) {
+      writePersistedSnapshotLocally(nextState, {
+        ...localMeta,
+        lastRemoteSeenAt: remoteUpdatedAt,
+        lastRemoteSyncAt: remoteUpdatedAt,
+        pendingRemoteSync: false,
+        lastSyncErrorAt: null,
+      });
+    }
 
     return {
       source: "remote",
       remoteConfigured: true,
-      remoteUpdatedAt: data.updated_at ?? null,
+      syncStatus: "remote",
+      remoteUpdatedAt,
+      localMeta: readLocalAppMeta(),
       overrides: nextState.overrides,
       servers: nextState.servers,
     };
@@ -193,7 +364,9 @@ export const loadPersistedAppState = async () => {
     return {
       source: "local",
       remoteConfigured: true,
+      syncStatus: localMeta.pendingRemoteSync ? "offline_pending" : "offline",
       remoteError: error?.message ?? "Falha ao carregar a persistencia remota.",
+      localMeta,
       overrides: localState.overrides,
       servers: localState.servers,
     };
@@ -201,43 +374,41 @@ export const loadPersistedAppState = async () => {
 };
 
 export const savePersistedAppState = async ({ overrides = [], servers = [] }) => {
-  writeLocalAppState({ overrides, servers });
+  const localMeta = {
+    ...readLocalAppMeta(),
+    lastLocalSaveAt: new Date().toISOString(),
+    pendingRemoteSync: true,
+    lastSyncErrorAt: null,
+  };
+  writePersistedSnapshotLocally({ overrides, servers }, localMeta);
 
   const client = getSupabaseClient();
   if (!client) {
     return {
       remoteSaved: false,
       remoteConfigured: false,
+      localSavedAt: localMeta.lastLocalSaveAt,
+      pendingRemoteSync: true,
     };
   }
 
-  const payload = {
-    overrides,
-    servers,
-  };
+  const syncResult = await syncLocalStateToRemote(client, { overrides, servers }, localMeta);
 
-  const { error } = await client
-    .from(SUPABASE_TABLE)
-    .upsert(
-      {
-        id: SUPABASE_ROW_ID,
-        payload,
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: "id" },
-    );
-
-  if (error) {
-    return {
-      remoteSaved: false,
-      remoteConfigured: true,
-      remoteError: error.message,
-    };
+  if (!syncResult.remoteSaved) {
+    writeLocalAppMeta({
+      ...localMeta,
+      pendingRemoteSync: true,
+      lastSyncErrorAt: new Date().toISOString(),
+    });
   }
 
   return {
-    remoteSaved: true,
+    remoteSaved: syncResult.remoteSaved,
     remoteConfigured: true,
+    remoteError: syncResult.remoteError,
+    localSavedAt: localMeta.lastLocalSaveAt,
+    remoteSyncedAt: syncResult.remoteSyncedAt,
+    pendingRemoteSync: !syncResult.remoteSaved,
   };
 };
 
