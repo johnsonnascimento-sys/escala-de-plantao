@@ -6,6 +6,7 @@ import {
   DEFAULT_COMPENSATION_RULES,
   formatMinutesAsHours,
   getBankHoursStats,
+  MODALIDADE_PONTOS_REMUNERADOS,
   MODALIDADE_SOBREAVISO_TERCO,
   MODALIDADE_TRABALHO_100,
   parseHoursToMinutes,
@@ -147,4 +148,51 @@ test("regras consecutivas sao aceitas e periodos sobrepostos sao rejeitados", ()
 
   assert.equal(validateCompensationRules(consecutive, rules), null);
   assert.match(validateCompensationRules(overlapping, rules), /sobrepoe/);
+});
+
+test("modalidade explicita permite banco de horas em qualquer mes", () => {
+  const base = buildBaseSchedule(
+    [{ data: "2026-07-05", juiz: "Juiz", desc: "Domingo", tipo: "DOM", fixo: "ANA" }],
+    [{ nome: "ANA", ferias: [], impedimentos: [] }],
+    DEFAULT_COMPENSATION_RULES,
+  );
+  const [shift] = applyOverrides(base, [{
+    id: "julho-banco",
+    mode: "replace",
+    date: "2026-07-05",
+    server_name: "ANA",
+    tipo: "DOM",
+    compensation_mode: MODALIDADE_TRABALHO_100,
+    reported_minutes: 300,
+    credited_minutes: 600,
+    compensation_confirmed_at: "2026-07-06T10:00:00.000Z",
+  }], DEFAULT_COMPENSATION_RULES);
+
+  assert.equal(shift.regimeCompensacao, REGIME_BANCO_HORAS);
+  assert.equal(shift.pontos, 0);
+  assert.equal(shift.valor, 0);
+  assert.equal(getBankHoursStats([shift]).ANA.minutosConfirmados, 600);
+});
+
+test("modalidade remunerada explicita pode prevalecer sobre regra do periodo", () => {
+  const meta = getPlantaoMeta("DOM", "2026-08-02", DEFAULT_COMPENSATION_RULES, MODALIDADE_PONTOS_REMUNERADOS);
+  assert.deepEqual(meta, { pontos: 4, valor: 776.7 });
+
+  const base = buildBaseSchedule(
+    [{ data: "2026-08-02", juiz: "Juiz", desc: "Domingo", tipo: "DOM", fixo: "ANA" }],
+    [{ nome: "ANA", ferias: [], impedimentos: [] }],
+    DEFAULT_COMPENSATION_RULES,
+  );
+  const [shift] = applyOverrides(base, [{
+    id: "agosto-remunerado",
+    mode: "replace",
+    date: "2026-08-02",
+    server_name: "ANA",
+    tipo: "DOM",
+    compensation_mode: MODALIDADE_PONTOS_REMUNERADOS,
+  }], DEFAULT_COMPENSATION_RULES);
+
+  assert.equal(shift.regimeCompensacao, REGIME_PONTOS);
+  assert.equal(shift.pontos, 4);
+  assert.equal(shift.valor, 776.7);
 });

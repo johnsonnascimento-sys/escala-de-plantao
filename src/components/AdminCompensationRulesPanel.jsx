@@ -17,7 +17,7 @@ const AdminCompensationRulesPanel = ({
         <CalendarClock size={20} className="text-indigo-500" />
         <div>
           <h3 className="text-lg font-black text-slate-800">Regimes cadastrados</h3>
-          <p className="text-xs text-slate-500">Periodos sem regra usam pontos e remuneracao normalmente.</p>
+          <p className="text-xs text-slate-500">A regra define o padrao do periodo; cada plantao pode escolher outra modalidade.</p>
         </div>
       </div>
       <div className="space-y-3">

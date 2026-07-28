@@ -1,5 +1,6 @@
 export const REGIME_PONTOS = "points";
 export const REGIME_BANCO_HORAS = "time_bank";
+export const MODALIDADE_PONTOS_REMUNERADOS = "paid_points";
 export const MODALIDADE_TRABALHO_100 = "work_100";
 export const MODALIDADE_SOBREAVISO_TERCO = "on_call_third";
 
@@ -29,6 +30,12 @@ export const getCompensationRule = (date, rules = []) =>
 export const getCompensationRegime = (date, rules = []) =>
   getCompensationRule(date, rules)?.regime ?? REGIME_PONTOS;
 
+export const getShiftCompensationRegime = (date, rules = [], mode = null) => {
+  if (mode === MODALIDADE_PONTOS_REMUNERADOS) return REGIME_PONTOS;
+  if (mode === MODALIDADE_TRABALHO_100 || mode === MODALIDADE_SOBREAVISO_TERCO) return REGIME_BANCO_HORAS;
+  return getCompensationRegime(date, rules);
+};
+
 export const parseHoursToMinutes = (value) => {
   const match = /^(\d{1,3}):([0-5]\d)$/.exec(String(value ?? "").trim());
   if (!match) return null;
@@ -48,6 +55,7 @@ export const calculateCreditedMinutes = (mode, reportedMinutes) => {
 };
 
 export const getCompensationModeLabel = (mode) => {
+  if (mode === MODALIDADE_PONTOS_REMUNERADOS) return "Plantao remunerado (pontos)";
   if (mode === MODALIDADE_TRABALHO_100) return "Trabalho 100%";
   if (mode === MODALIDADE_SOBREAVISO_TERCO) return "Sobreaviso 1/3";
   return "Modalidade pendente";
@@ -55,14 +63,14 @@ export const getCompensationModeLabel = (mode) => {
 
 export const decorateShiftCompensation = (shift, rules = []) => {
   const rule = getCompensationRule(shift.data, rules);
-  const regime = rule?.regime ?? REGIME_PONTOS;
+  const regime = getShiftCompensationRegime(shift.data, rules, shift.modalidadeCompensacao);
 
   if (regime !== REGIME_BANCO_HORAS) {
     return {
       ...shift,
       regimeCompensacao: REGIME_PONTOS,
       regraCompensacaoId: rule?.id ?? null,
-      modalidadeCompensacao: null,
+      modalidadeCompensacao: shift.modalidadeCompensacao === MODALIDADE_PONTOS_REMUNERADOS ? MODALIDADE_PONTOS_REMUNERADOS : null,
       minutosApurados: 0,
       minutosCreditados: 0,
       compensacaoConfirmadaEm: null,
@@ -74,7 +82,7 @@ export const decorateShiftCompensation = (shift, rules = []) => {
     pontos: 0,
     valor: 0,
     regimeCompensacao: REGIME_BANCO_HORAS,
-    regraCompensacaoId: rule.id,
+    regraCompensacaoId: rule?.id ?? null,
     modalidadeCompensacao: shift.modalidadeCompensacao ?? null,
     minutosApurados: Number(shift.minutosApurados) || 0,
     minutosCreditados: shift.compensacaoConfirmadaEm ? Number(shift.minutosCreditados) || 0 : 0,

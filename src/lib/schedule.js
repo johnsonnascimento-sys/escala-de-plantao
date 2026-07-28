@@ -6,7 +6,7 @@ import {
   VALOR_DOM_FERIADO,
   VALOR_SABADO,
 } from "../data/scheduleData.js";
-import { decorateShiftCompensation, getCompensationRegime, REGIME_BANCO_HORAS } from "./compensation.js";
+import { decorateShiftCompensation, getShiftCompensationRegime, REGIME_BANCO_HORAS } from "./compensation.js";
 
 export const parseDate = (dateStr) => {
   const [y, m, d] = dateStr.split("-").map(Number);
@@ -28,9 +28,9 @@ export const normalizeText = (value) =>
     .replace(/[\u0300-\u036f]/g, "")
     .trim();
 
-export const getPlantaoMeta = (tipo, date = "", compensationRules = []) => {
+export const getPlantaoMeta = (tipo, date = "", compensationRules = [], compensationMode = null) => {
   const isSabado = tipo === "SAB";
-  const isBancoHoras = date && getCompensationRegime(date, compensationRules) === REGIME_BANCO_HORAS;
+  const isBancoHoras = date && getShiftCompensationRegime(date, compensationRules, compensationMode) === REGIME_BANCO_HORAS;
   return {
     pontos: isBancoHoras ? 0 : isSabado ? PTS_SABADO : PTS_DOM_FERIADO,
     valor: isBancoHoras ? 0 : isSabado ? VALOR_SABADO : VALOR_DOM_FERIADO,
@@ -136,7 +136,7 @@ export const applyOverrides = (baseSchedule, overrides, compensationRules = []) 
           servidor: override.server_name || normalizedBase[idx].servidor,
           desc: override.desc || normalizedBase[idx].desc,
           tipo: override.tipo || normalizedBase[idx].tipo,
-          ...getPlantaoMeta(override.tipo || normalizedBase[idx].tipo, override.date, compensationRules),
+          ...getPlantaoMeta(override.tipo || normalizedBase[idx].tipo, override.date, compensationRules, override.compensation_mode),
           origem: "override",
           notes: override.notes || "",
           overrideId: override.id,
@@ -157,7 +157,7 @@ export const applyOverrides = (baseSchedule, overrides, compensationRules = []) 
         servidor: override.server_name,
         desc: override.desc,
         tipo: override.tipo,
-        ...getPlantaoMeta(override.tipo, override.date, compensationRules),
+        ...getPlantaoMeta(override.tipo, override.date, compensationRules, override.compensation_mode),
         origem: "manual",
         notes: override.notes || "",
         overrideId: override.id,

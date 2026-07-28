@@ -39,6 +39,7 @@ import {
   getBankHoursStats,
   getCompensationModeLabel,
   getCompensationRegime,
+  MODALIDADE_PONTOS_REMUNERADOS,
   MODALIDADE_SOBREAVISO_TERCO,
   MODALIDADE_TRABALHO_100,
   normalizeCompensationRule,
@@ -473,9 +474,19 @@ const App = () => {
   const escalaTotal = useMemo(() => applyOverrides(escalaBase, overrides, compensationRules), [compensationRules, escalaBase, overrides]);
   const statsGlobais = useMemo(() => getStatsGlobais(escalaTotal), [escalaTotal]);
   const bancoHorasStats = useMemo(() => getBankHoursStats(escalaTotal), [escalaTotal]);
+  const effectiveFormCompensationMode = useMemo(() => {
+    if (formState.compensation_mode) return formState.compensation_mode;
+    if (!formState.date) return null;
+    return getCompensationRegime(formState.date, compensationRules) === REGIME_BANCO_HORAS
+      ? null
+      : MODALIDADE_PONTOS_REMUNERADOS;
+  }, [compensationRules, formState.compensation_mode, formState.date]);
   const formUsesBancoHoras = useMemo(
-    () => Boolean(formState.date) && getCompensationRegime(formState.date, compensationRules) === REGIME_BANCO_HORAS,
-    [compensationRules, formState.date],
+    () =>
+      effectiveFormCompensationMode === MODALIDADE_TRABALHO_100 ||
+      effectiveFormCompensationMode === MODALIDADE_SOBREAVISO_TERCO ||
+      (!effectiveFormCompensationMode && Boolean(formState.date) && getCompensationRegime(formState.date, compensationRules) === REGIME_BANCO_HORAS),
+    [compensationRules, effectiveFormCompensationMode, formState.date],
   );
   const warningMessage = useMemo(() => getDisponibilidadeMensagem(servidores, formState.server_name, formState.date), [servidores, formState.server_name, formState.date]);
 
@@ -821,15 +832,16 @@ const App = () => {
 
     const now = new Date().toISOString();
     const existing = formState.id ? overridesRef.current.find((item) => item.id === formState.id) : null;
+    const selectedCompensationMode = effectiveFormCompensationMode;
+    if (!selectedCompensationMode) {
+      return setFormMessage("Selecione como este plantao sera compensado.");
+    }
     let reportedMinutes = 0;
     let creditedMinutes = 0;
     let confirmedAt = null;
     if (formUsesBancoHoras) {
       if (formState.compensation_confirmed && formState.date >= formatLocalDateIso()) {
         return setFormMessage("A compensacao so pode ser confirmada depois da data do plantao.");
-      }
-      if (formState.compensation_confirmed && !formState.compensation_mode) {
-        return setFormMessage("Selecione a modalidade de banco de horas.");
       }
       reportedMinutes = parseHoursToMinutes(formState.reported_time);
       if (formState.compensation_confirmed && (!reportedMinutes || reportedMinutes <= 0)) {
@@ -838,12 +850,12 @@ const App = () => {
       reportedMinutes = reportedMinutes || 0;
       const keepsConfirmedCalculation =
         Boolean(existing?.compensation_confirmed_at) &&
-        existing.compensation_mode === formState.compensation_mode &&
+        existing.compensation_mode === selectedCompensationMode &&
         Number(existing.reported_minutes) === reportedMinutes;
       creditedMinutes = formState.compensation_confirmed
         ? keepsConfirmedCalculation
           ? Number(existing.credited_minutes) || 0
-          : calculateCreditedMinutes(formState.compensation_mode, reportedMinutes)
+          : calculateCreditedMinutes(selectedCompensationMode, reportedMinutes)
         : 0;
       confirmedAt = formState.compensation_confirmed
         ? existing?.compensation_confirmed_at ?? new Date().toISOString()
@@ -859,7 +871,7 @@ const App = () => {
       desc: formState.desc.trim(),
       tipo: formState.tipo,
       notes: formState.notes.trim(),
-      compensation_mode: formUsesBancoHoras ? formState.compensation_mode : null,
+      compensation_mode: selectedCompensationMode,
       reported_minutes: reportedMinutes,
       credited_minutes: creditedMinutes,
       compensation_confirmed_at: confirmedAt,
@@ -1136,51 +1148,57 @@ const App = () => {
                           <input className="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-indigo-500" value={formState.desc} onChange={(event) => setFormState((current) => ({ ...current, desc: event.target.value }))} placeholder="Ex.: Domingo, Tiradentes, Sabado" />
                         </label>
                       </div>
-                      {formUsesBancoHoras && (
-                        <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 space-y-4">
+                      {formState.date && (
+                        <div className={`rounded-2xl border p-4 space-y-4 ${formUsesBancoHoras ? "border-amber-200 bg-amber-50" : "border-indigo-200 bg-indigo-50"}`}>
                           <div>
-                            <p className="text-sm font-black text-amber-900">Regime de banco de horas</p>
-                            <p className="text-xs text-amber-800">Este plantao gera zero pontos e zero remuneracao.</p>
-                          </div>
-                          <div className="grid gap-4 md:grid-cols-2">
-                            <label className="text-sm font-semibold text-slate-700">
-                              Modalidade
-                              <select
-                                className="mt-2 w-full rounded-2xl border border-amber-200 bg-white px-4 py-3 outline-none focus:border-amber-500"
-                                value={formState.compensation_mode || ""}
-                                onChange={(event) => setFormState((current) => ({
-                                  ...current,
-                                  compensation_mode: event.target.value || null,
-                                  reported_time: event.target.value === MODALIDADE_SOBREAVISO_TERCO && !current.reported_time ? "24:00" : current.reported_time,
-                                }))}
-                              >
-                                <option value="">Selecione</option>
-                                <option value={MODALIDADE_TRABALHO_100}>Trabalho com adicional de 100%</option>
-                                <option value={MODALIDADE_SOBREAVISO_TERCO}>Sobreaviso de 1/3</option>
-                              </select>
-                            </label>
-                            <label className="text-sm font-semibold text-slate-700">
-                              Duracao apurada (HH:MM)
-                              <input className="mt-2 w-full rounded-2xl border border-amber-200 bg-white px-4 py-3 outline-none focus:border-amber-500" value={formState.reported_time} onChange={(event) => setFormState((current) => ({ ...current, reported_time: event.target.value }))} placeholder="05:00 ou 24:00" />
-                            </label>
-                          </div>
-                          <label className={`flex items-start gap-3 rounded-xl bg-white p-3 text-sm font-semibold ${formState.date >= formatLocalDateIso() ? "cursor-not-allowed opacity-60" : "cursor-pointer"}`}>
-                            <input
-                              type="checkbox"
-                              className="mt-1"
-                              checked={formState.compensation_confirmed}
-                              disabled={formState.date >= formatLocalDateIso()}
-                              onChange={(event) => setFormState((current) => ({ ...current, compensation_confirmed: event.target.checked }))}
-                            />
-                            <span>
-                              Confirmar apuracao
-                              <span className="block text-xs font-normal text-slate-500">Somente plantao passado pode creditar o banco. O valor confirmado fica congelado no historico.</span>
-                            </span>
-                          </label>
-                          {formState.compensation_confirmed && parseHoursToMinutes(formState.reported_time) > 0 && (
-                            <p className="text-sm font-bold text-emerald-800">
-                              Credito calculado: {formatMinutesAsHours(calculateCreditedMinutes(formState.compensation_mode, parseHoursToMinutes(formState.reported_time)))}
+                            <p className={`text-sm font-black ${formUsesBancoHoras ? "text-amber-900" : "text-indigo-900"}`}>Compensacao deste plantao</p>
+                            <p className={`text-xs ${formUsesBancoHoras ? "text-amber-800" : "text-indigo-800"}`}>
+                              {formUsesBancoHoras ? "Este plantao gera zero pontos e zero remuneracao." : "Este plantao gera os pontos e a remuneracao previstos para o tipo do dia."}
                             </p>
+                          </div>
+                          <label className="block text-sm font-semibold text-slate-700">
+                            Modalidade
+                            <select
+                              className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 outline-none focus:border-indigo-500"
+                              value={effectiveFormCompensationMode || ""}
+                              onChange={(event) => setFormState((current) => ({
+                                ...current,
+                                compensation_mode: event.target.value || null,
+                                reported_time: event.target.value === MODALIDADE_SOBREAVISO_TERCO && !current.reported_time ? "24:00" : event.target.value === MODALIDADE_PONTOS_REMUNERADOS ? "" : current.reported_time,
+                                compensation_confirmed: event.target.value === MODALIDADE_PONTOS_REMUNERADOS ? false : current.compensation_confirmed,
+                              }))}
+                            >
+                              <option value="">Selecione</option>
+                              <option value={MODALIDADE_PONTOS_REMUNERADOS}>Plantao remunerado com pontos</option>
+                              <option value={MODALIDADE_TRABALHO_100}>Banco de horas com adicional de 100%</option>
+                              <option value={MODALIDADE_SOBREAVISO_TERCO}>Sobreaviso de 1/3</option>
+                            </select>
+                          </label>
+                          {formUsesBancoHoras && (
+                            <>
+                              <label className="block text-sm font-semibold text-slate-700">
+                                Duracao apurada (HH:MM)
+                                <input className="mt-2 w-full rounded-2xl border border-amber-200 bg-white px-4 py-3 outline-none focus:border-amber-500" value={formState.reported_time} onChange={(event) => setFormState((current) => ({ ...current, reported_time: event.target.value }))} placeholder="05:00 ou 24:00" />
+                              </label>
+                              <label className={`flex items-start gap-3 rounded-xl bg-white p-3 text-sm font-semibold ${formState.date >= formatLocalDateIso() ? "cursor-not-allowed opacity-60" : "cursor-pointer"}`}>
+                                <input
+                                  type="checkbox"
+                                  className="mt-1"
+                                  checked={formState.compensation_confirmed}
+                                  disabled={formState.date >= formatLocalDateIso()}
+                                  onChange={(event) => setFormState((current) => ({ ...current, compensation_confirmed: event.target.checked }))}
+                                />
+                                <span>
+                                  Confirmar apuracao
+                                  <span className="block text-xs font-normal text-slate-500">Somente plantao passado pode creditar o banco. O valor confirmado fica congelado no historico.</span>
+                                </span>
+                              </label>
+                              {formState.compensation_confirmed && parseHoursToMinutes(formState.reported_time) > 0 && (
+                                <p className="text-sm font-bold text-emerald-800">
+                                  Credito calculado: {formatMinutesAsHours(calculateCreditedMinutes(effectiveFormCompensationMode, parseHoursToMinutes(formState.reported_time)))}
+                                </p>
+                              )}
+                            </>
                           )}
                         </div>
                       )}
