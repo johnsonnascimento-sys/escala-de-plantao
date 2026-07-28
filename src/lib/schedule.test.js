@@ -1,7 +1,19 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { SERVIDOR_A_DEFINIR } from "../data/scheduleData.js";
-import { applyOverrides, getStatsGlobais } from "./schedule.js";
+import {
+  calculateCreditedMinutes,
+  DEFAULT_COMPENSATION_RULES,
+  formatMinutesAsHours,
+  getBankHoursStats,
+  MODALIDADE_SOBREAVISO_TERCO,
+  MODALIDADE_TRABALHO_100,
+  parseHoursToMinutes,
+  REGIME_BANCO_HORAS,
+  REGIME_PONTOS,
+  validateCompensationRules,
+} from "./compensation.js";
+import { applyOverrides, buildBaseSchedule, getPlantaoMeta, getStatsGlobais } from "./schedule.js";
 
 test("separa datas anteriores da previsao anual e mantem o dia atual como previsto", () => {
   const escala = [
@@ -80,4 +92,59 @@ test("ignora plantoes pendentes e nao cria estatistica para servidor sem plantao
 
   assert.deepEqual(stats, {});
   assert.equal(stats["SERVIDOR SEM PLANTAO"], undefined);
+});
+
+test("julho mantem pontos e agosto zera pontos e remuneracao", () => {
+  assert.deepEqual(getPlantaoMeta("DOM", "2026-07-31", DEFAULT_COMPENSATION_RULES), { pontos: 4, valor: 776.7 });
+  assert.deepEqual(getPlantaoMeta("DOM", "2026-08-01", DEFAULT_COMPENSATION_RULES), { pontos: 0, valor: 0 });
+  assert.deepEqual(getPlantaoMeta("SAB", "2026-08-31", DEFAULT_COMPENSATION_RULES), { pontos: 0, valor: 0 });
+  assert.deepEqual(getPlantaoMeta("SAB", "2026-09-01", DEFAULT_COMPENSATION_RULES), { pontos: 3, valor: 582.53 });
+});
+
+test("calcula trabalho 100% e sobreaviso em minutos", () => {
+  assert.equal(parseHoursToMinutes("05:00"), 300);
+  assert.equal(calculateCreditedMinutes(MODALIDADE_TRABALHO_100, 300), 600);
+  assert.equal(formatMinutesAsHours(600), "10:00");
+  assert.equal(parseHoursToMinutes("24:00"), 1440);
+  assert.equal(calculateCreditedMinutes(MODALIDADE_SOBREAVISO_TERCO, 1440), 480);
+  assert.equal(formatMinutesAsHours(480), "08:00");
+  assert.equal(parseHoursToMinutes("5.5"), null);
+});
+
+test("somente apuracao confirmada aumenta o banco de horas", () => {
+  const base = buildBaseSchedule(
+    [
+      { data: "2026-08-01", juiz: "Juiz", desc: "Sabado", tipo: "SAB", fixo: "ANA" },
+      { data: "2026-08-02", juiz: "Juiz", desc: "Domingo", tipo: "DOM", fixo: "ANA" },
+    ],
+    [{ nome: "ANA", ferias: [], impedimentos: [] }],
+    DEFAULT_COMPENSATION_RULES,
+  );
+  const escala = applyOverrides(base, [
+    {
+      id: "confirmed",
+      mode: "replace",
+      date: "2026-08-01",
+      server_name: "ANA",
+      tipo: "SAB",
+      compensation_mode: MODALIDADE_TRABALHO_100,
+      reported_minutes: 300,
+      credited_minutes: 600,
+      compensation_confirmed_at: "2026-08-02T10:00:00.000Z",
+    },
+  ], DEFAULT_COMPENSATION_RULES);
+
+  assert.deepEqual(getBankHoursStats(escala).ANA, { minutosConfirmados: 600, plantoesPendentes: 1 });
+  assert.equal(escala.every((shift) => shift.regimeCompensacao === REGIME_BANCO_HORAS && shift.pontos === 0 && shift.valor === 0), true);
+});
+
+test("regras consecutivas sao aceitas e periodos sobrepostos sao rejeitados", () => {
+  const rules = [
+    { id: "jul", label: "Julho", start_date: "2026-07-01", end_date: "2026-07-31", regime: REGIME_PONTOS },
+  ];
+  const consecutive = { id: "ago", label: "Agosto", start_date: "2026-08-01", end_date: "2026-08-31", regime: REGIME_BANCO_HORAS };
+  const overlapping = { id: "overlap", label: "Sobreposta", start_date: "2026-07-31", end_date: "2026-08-10", regime: REGIME_BANCO_HORAS };
+
+  assert.equal(validateCompensationRules(consecutive, rules), null);
+  assert.match(validateCompensationRules(overlapping, rules), /sobrepoe/);
 });

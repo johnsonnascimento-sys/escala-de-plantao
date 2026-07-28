@@ -3,6 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 export const STORAGE_KEYS = {
   overrides: "escala.overrides.v1",
   servers: "escala.servers.v1",
+  compensationRules: "escala.compensation-rules.v1",
   meta: "escala.state.meta.v1",
 };
 
@@ -17,6 +18,7 @@ const FALLBACK_SUPABASE_CONFIG = {
 const normalizePersistedPayload = (payload) => ({
   overrides: Array.isArray(payload?.overrides) ? payload.overrides : [],
   servers: Array.isArray(payload?.servers) ? payload.servers : [],
+  compensationRules: Array.isArray(payload?.compensationRules) ? payload.compensationRules : null,
 });
 
 const normalizeLocalMeta = (meta) => ({
@@ -69,7 +71,8 @@ const isTimestampNewer = (candidate, baseline) => {
   return candidateMs > baselineMs;
 };
 
-const hasPersistedState = (state) => Boolean(state?.overrides?.length || state?.servers?.length);
+const hasPersistedState = (state) =>
+  Boolean(state?.overrides?.length || state?.servers?.length || Array.isArray(state?.compensationRules));
 
 const isGitHubPagesHost = () => {
   try {
@@ -182,6 +185,7 @@ export const writeStoredJson = (key, value) => {
 export const readLocalAppState = () => ({
   overrides: readStoredJson(STORAGE_KEYS.overrides, []),
   servers: readStoredJson(STORAGE_KEYS.servers, []),
+  compensationRules: readStoredJson(STORAGE_KEYS.compensationRules, null),
 });
 
 export const readLocalAppMeta = () => normalizeLocalMeta(readStoredValue(STORAGE_KEYS.meta, {}));
@@ -190,13 +194,14 @@ export const writeLocalAppMeta = (meta) => {
   writeStoredJson(STORAGE_KEYS.meta, normalizeLocalMeta(meta));
 };
 
-export const writeLocalAppState = ({ overrides = [], servers = [] }) => {
+export const writeLocalAppState = ({ overrides = [], servers = [], compensationRules = [] }) => {
   writeStoredJson(STORAGE_KEYS.overrides, overrides);
   writeStoredJson(STORAGE_KEYS.servers, servers);
+  writeStoredJson(STORAGE_KEYS.compensationRules, compensationRules);
 };
 
-const writePersistedSnapshotLocally = ({ overrides = [], servers = [] }, meta = {}) => {
-  writeLocalAppState({ overrides, servers });
+const writePersistedSnapshotLocally = ({ overrides = [], servers = [], compensationRules = [] }, meta = {}) => {
+  writeLocalAppState({ overrides, servers, compensationRules });
   writeLocalAppMeta(meta);
 };
 
@@ -205,6 +210,7 @@ const syncLocalStateToRemote = async (client, state, localMeta) => {
   const payload = {
     overrides: state.overrides,
     servers: state.servers,
+    compensationRules: state.compensationRules,
   };
 
   const { error } = await client
@@ -254,6 +260,7 @@ export const loadPersistedAppState = async () => {
       localMeta,
       overrides: localState.overrides,
       servers: localState.servers,
+      compensationRules: localState.compensationRules,
     };
   }
 
@@ -269,6 +276,7 @@ export const loadPersistedAppState = async () => {
         localMeta,
         overrides: localState.overrides,
         servers: localState.servers,
+        compensationRules: localState.compensationRules,
       };
     }
 
@@ -284,6 +292,7 @@ export const loadPersistedAppState = async () => {
             localMeta: readLocalAppMeta(),
             overrides: localState.overrides,
             servers: localState.servers,
+            compensationRules: localState.compensationRules,
           };
         }
 
@@ -295,6 +304,7 @@ export const loadPersistedAppState = async () => {
           localMeta,
           overrides: localState.overrides,
           servers: localState.servers,
+          compensationRules: localState.compensationRules,
         };
       }
 
@@ -305,6 +315,7 @@ export const loadPersistedAppState = async () => {
         localMeta,
         overrides: localState.overrides,
         servers: localState.servers,
+        compensationRules: localState.compensationRules,
       };
     }
 
@@ -326,6 +337,7 @@ export const loadPersistedAppState = async () => {
           localMeta: readLocalAppMeta(),
           overrides: localState.overrides,
           servers: localState.servers,
+          compensationRules: localState.compensationRules,
         };
       }
 
@@ -338,6 +350,7 @@ export const loadPersistedAppState = async () => {
         localMeta,
         overrides: localState.overrides,
         servers: localState.servers,
+        compensationRules: localState.compensationRules,
       };
     }
 
@@ -359,6 +372,7 @@ export const loadPersistedAppState = async () => {
       localMeta: readLocalAppMeta(),
       overrides: nextState.overrides,
       servers: nextState.servers,
+      compensationRules: nextState.compensationRules,
     };
   } catch (error) {
     return {
@@ -369,18 +383,19 @@ export const loadPersistedAppState = async () => {
       localMeta,
       overrides: localState.overrides,
       servers: localState.servers,
+      compensationRules: localState.compensationRules,
     };
   }
 };
 
-export const savePersistedAppState = async ({ overrides = [], servers = [] }) => {
+export const savePersistedAppState = async ({ overrides = [], servers = [], compensationRules = [] }) => {
   const localMeta = {
     ...readLocalAppMeta(),
     lastLocalSaveAt: new Date().toISOString(),
     pendingRemoteSync: true,
     lastSyncErrorAt: null,
   };
-  writePersistedSnapshotLocally({ overrides, servers }, localMeta);
+  writePersistedSnapshotLocally({ overrides, servers, compensationRules }, localMeta);
 
   const client = getSupabaseClient();
   if (!client) {
@@ -392,7 +407,7 @@ export const savePersistedAppState = async ({ overrides = [], servers = [] }) =>
     };
   }
 
-  const syncResult = await syncLocalStateToRemote(client, { overrides, servers }, localMeta);
+  const syncResult = await syncLocalStateToRemote(client, { overrides, servers, compensationRules }, localMeta);
 
   if (!syncResult.remoteSaved) {
     writeLocalAppMeta({

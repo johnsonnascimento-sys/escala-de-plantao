@@ -3,6 +3,7 @@ import {
   AlertCircle,
   Briefcase,
   Calendar,
+  CalendarClock,
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
@@ -27,13 +28,29 @@ import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import AdminDatabasePanel from "./components/AdminDatabasePanel";
 import AdminDrawPanel from "./components/AdminDrawPanel";
+import AdminCompensationRulesPanel from "./components/AdminCompensationRulesPanel";
 import AdminServersPanel from "./components/AdminServersPanel";
 import PlantaoCard from "./components/PlantaoCard";
 import { NOMES_MESES, SERVIDOR_A_DEFINIR, defaultServidores, feriadosPortaria, plantoesBase } from "./data/scheduleData";
 import {
+  calculateCreditedMinutes,
+  DEFAULT_COMPENSATION_RULES,
+  formatMinutesAsHours,
+  getBankHoursStats,
+  getCompensationModeLabel,
+  getCompensationRegime,
+  MODALIDADE_SOBREAVISO_TERCO,
+  MODALIDADE_TRABALHO_100,
+  normalizeCompensationRule,
+  parseHoursToMinutes,
+  REGIME_BANCO_HORAS,
+  validateCompensationRules,
+} from "./lib/compensation";
+import {
   applyOverrides,
   buildBaseSchedule,
   formatDateBr,
+  formatLocalDateIso,
   getDisponibilidadeMensagem,
   getStatsGlobais,
   isPlantaoPendente,
@@ -65,6 +82,10 @@ const normalizeOverrideRecord = (override, index = 0) => ({
   desc: override.desc ?? "",
   tipo: override.tipo ?? "DOM",
   notes: override.notes ?? "",
+  compensation_mode: override.compensation_mode ?? null,
+  reported_minutes: Number(override.reported_minutes) || 0,
+  credited_minutes: Number(override.credited_minutes) || 0,
+  compensation_confirmed_at: override.compensation_confirmed_at ?? null,
   created_at: override.created_at ?? override.updated_at ?? new Date().toISOString(),
   updated_at: override.updated_at ?? override.created_at ?? new Date().toISOString(),
 });
@@ -78,7 +99,21 @@ const createEmptyForm = () => ({
   desc: "",
   tipo: "DOM",
   notes: "",
+  compensation_mode: null,
+  reported_time: "",
+  compensation_confirmed: false,
 });
+
+const createRuleForm = () => ({
+  id: null,
+  label: "",
+  start_date: "",
+  end_date: "",
+  regime: REGIME_BANCO_HORAS,
+});
+
+const normalizeRulesOrDefault = (rules) =>
+  (Array.isArray(rules) ? rules : DEFAULT_COMPENSATION_RULES).map(normalizeCompensationRule);
 
 const createServerForm = () => serverToFormState();
 
@@ -87,7 +122,7 @@ const emptyStats = () => ({
   previstoAnual: { dias: 0, pontos: 0, valor: 0 },
 });
 
-const TabEscala = ({ servidores, servidorSelecionado, setServidorSelecionado, mesAtivo, setMesAtivo, plantoesFiltrados, statsGlobais }) => {
+const TabEscala = ({ servidores, servidorSelecionado, setServidorSelecionado, mesAtivo, setMesAtivo, plantoesFiltrados, statsGlobais, bancoHorasStats }) => {
   const maxPontosPrevistos = Math.max(
     ...servidores.map((servidor) => statsGlobais[servidor.nome]?.previstoAnual.pontos || 0),
     1,
@@ -156,6 +191,23 @@ const TabEscala = ({ servidores, servidorSelecionado, setServidorSelecionado, me
                     <div className="absolute inset-y-0 left-0 bg-indigo-200" style={{ width: `${(previstos / maxPontosPrevistos) * 100}%` }} />
                     <div className="absolute inset-y-0 left-0 bg-indigo-600" style={{ width: `${(realizados / maxPontosPrevistos) * 100}%` }} />
                   </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+        <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
+          <h3 className="font-bold text-slate-800 mb-4 flex items-center gap-2 text-xs uppercase tracking-widest border-b pb-4"><CalendarClock size={16} className="text-amber-500" /> Banco de horas</h3>
+          <div className="space-y-3">
+            {servidores.map((servidor) => {
+              const data = bancoHorasStats[servidor.nome] || { minutosConfirmados: 0, plantoesPendentes: 0 };
+              return (
+                <div key={servidor.nome} className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-slate-50 px-3 py-2 text-[10px] font-bold">
+                  <span className="text-slate-600">{servidor.nome}</span>
+                  <span className="text-right">
+                    <span className="text-emerald-700">{formatMinutesAsHours(data.minutosConfirmados)} confirmadas</span>
+                    {data.plantoesPendentes > 0 && <span className="ml-2 text-amber-700">· {data.plantoesPendentes} pendente(s)</span>}
+                  </span>
                 </div>
               );
             })}
@@ -247,6 +299,11 @@ const App = () => {
   const [adminDateFilter, setAdminDateFilter] = useState("");
   const [adminSection, setAdminSection] = useState("schedule");
   const [serverRows, setServerRows] = useState(() => (hasRemotePersistence ? [] : readStoredJson(STORAGE_KEYS.servers, []).map(normalizeServerRecord)));
+  const [compensationRules, setCompensationRules] = useState(() =>
+    hasRemotePersistence ? normalizeRulesOrDefault(null) : normalizeRulesOrDefault(readStoredJson(STORAGE_KEYS.compensationRules, null)),
+  );
+  const [ruleForm, setRuleForm] = useState(createRuleForm);
+  const [ruleMessage, setRuleMessage] = useState("");
   const [serverForm, setServerForm] = useState(createServerForm());
   const [serverMessage, setServerMessage] = useState("");
   const [selectedDrawDate, setSelectedDrawDate] = useState("");
@@ -265,6 +322,7 @@ const App = () => {
   const [healthcheckRunning, setHealthcheckRunning] = useState(false);
   const overridesRef = useRef(overrides);
   const serverRowsRef = useRef(serverRows);
+  const compensationRulesRef = useRef(compensationRules);
   const mountedRef = useRef(true);
 
   useEffect(() => {
@@ -274,6 +332,10 @@ const App = () => {
   useEffect(() => {
     serverRowsRef.current = serverRows;
   }, [serverRows]);
+
+  useEffect(() => {
+    compensationRulesRef.current = compensationRules;
+  }, [compensationRules]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -317,6 +379,7 @@ const App = () => {
 
     const nextOverrides = (persisted.overrides || []).map(normalizeOverrideRecord);
     const nextServers = (persisted.servers || []).map(normalizeServerRecord);
+    const nextCompensationRules = normalizeRulesOrDefault(persisted.compensationRules);
     const nextMeta = persisted.localMeta || null;
     const messageFromRemoteUpdatedAt = persisted.remoteUpdatedAt
       ? `Persistencia remota ativa. Ultima sincronizacao em ${new Date(persisted.remoteUpdatedAt).toLocaleString("pt-BR")}.`
@@ -325,8 +388,10 @@ const App = () => {
     if (persisted.source === "remote" || persisted.syncStatus === "resynced_local") {
       setOverrides(nextOverrides);
       setServerRows(nextServers);
+      setCompensationRules(nextCompensationRules);
       overridesRef.current = nextOverrides;
       serverRowsRef.current = nextServers;
+      compensationRulesRef.current = nextCompensationRules;
       setPersistenceMessage(
         persisted.syncStatus === "resynced_local"
           ? "Banco voltou e o cache local foi reenviado para o Supabase."
@@ -335,8 +400,10 @@ const App = () => {
     } else if (persisted.remoteConfigured && persisted.syncStatus === "pending_remote_sync") {
       setOverrides(nextOverrides);
       setServerRows(nextServers);
+      setCompensationRules(nextCompensationRules);
       overridesRef.current = nextOverrides;
       serverRowsRef.current = nextServers;
+      compensationRulesRef.current = nextCompensationRules;
       setPersistenceMessage(
         `Banco remoto voltou, mas ainda nao aceitou a re-sincronizacao do cache local. ${persisted.remoteError || "Tentaremos novamente automaticamente."}`,
       );
@@ -347,8 +414,10 @@ const App = () => {
     } else if (persisted.remoteConfigured && persisted.syncStatus === "remote_empty") {
       setOverrides(nextOverrides);
       setServerRows(nextServers);
+      setCompensationRules(nextCompensationRules);
       overridesRef.current = nextOverrides;
       serverRowsRef.current = nextServers;
+      compensationRulesRef.current = nextCompensationRules;
       setPersistenceMessage("Banco remoto configurado, mas sem dados. O cache local foi mantido.");
     } else {
       setPersistenceMessage("Persistindo somente neste navegador.");
@@ -373,7 +442,7 @@ const App = () => {
         return;
       }
 
-      if (event.key === STORAGE_KEYS.overrides || event.key === STORAGE_KEYS.servers || event.key === STORAGE_KEYS.meta || event.key === null) {
+      if (event.key === STORAGE_KEYS.overrides || event.key === STORAGE_KEYS.servers || event.key === STORAGE_KEYS.compensationRules || event.key === STORAGE_KEYS.meta || event.key === null) {
         syncNow();
       }
     };
@@ -400,9 +469,14 @@ const App = () => {
   }, [applyPersistedState]);
 
   const servidores = useMemo(() => mergeServerLists(defaultServidores, serverRows), [serverRows]);
-  const escalaBase = useMemo(() => buildBaseSchedule(plantoesBase, servidores), [servidores]);
-  const escalaTotal = useMemo(() => applyOverrides(escalaBase, overrides), [escalaBase, overrides]);
+  const escalaBase = useMemo(() => buildBaseSchedule(plantoesBase, servidores, compensationRules), [compensationRules, servidores]);
+  const escalaTotal = useMemo(() => applyOverrides(escalaBase, overrides, compensationRules), [compensationRules, escalaBase, overrides]);
   const statsGlobais = useMemo(() => getStatsGlobais(escalaTotal), [escalaTotal]);
+  const bancoHorasStats = useMemo(() => getBankHoursStats(escalaTotal), [escalaTotal]);
+  const formUsesBancoHoras = useMemo(
+    () => Boolean(formState.date) && getCompensationRegime(formState.date, compensationRules) === REGIME_BANCO_HORAS,
+    [compensationRules, formState.date],
+  );
   const warningMessage = useMemo(() => getDisponibilidadeMensagem(servidores, formState.server_name, formState.date), [servidores, formState.server_name, formState.date]);
 
   const plantoesFiltrados = useMemo(() => {
@@ -429,7 +503,7 @@ const App = () => {
       }));
 
   const exportToPDF = () => {
-    const doc = new jsPDF("p", "mm", "a4");
+    const doc = new jsPDF("l", "mm", "a4");
     const margin = 14;
     doc.setFontSize(18);
     doc.text("Escala de Plantao 2026", margin, 18);
@@ -438,8 +512,21 @@ const App = () => {
     autoTable(doc, {
       startY: 32,
       margin: { left: margin, right: margin },
-      head: [["Data", "Descricao", "Magistrado", "Servidor", "Tipo", "Pts", "Origem"]],
-      body: escalaTotal.map((plantao) => [formatDateBr(plantao.data), plantao.desc, plantao.juiz, plantao.servidor, plantao.tipo, String(plantao.pontos), plantao.origem === "base" ? "Base" : plantao.origem === "manual" ? "Manual" : "Editado"]),
+      head: [["Data", "Descricao", "Magistrado", "Servidor", "Tipo", "Regime", "Resultado", "Origem"]],
+      body: escalaTotal.map((plantao) => [
+        formatDateBr(plantao.data),
+        plantao.desc,
+        plantao.juiz,
+        plantao.servidor,
+        plantao.tipo,
+        plantao.regimeCompensacao === REGIME_BANCO_HORAS ? "Banco de horas" : "Pontos/remuneracao",
+        plantao.regimeCompensacao === REGIME_BANCO_HORAS
+          ? plantao.compensacaoConfirmadaEm
+            ? `${getCompensationModeLabel(plantao.modalidadeCompensacao)}: ${formatMinutesAsHours(plantao.minutosCreditados)}`
+            : "Pendente de apuracao"
+          : `${plantao.pontos} pts`,
+        plantao.origem === "base" ? "Base" : plantao.origem === "manual" ? "Manual" : "Editado",
+      ]),
       theme: "grid",
       headStyles: { fillColor: [79, 70, 229], textColor: 255, fontStyle: "bold" },
       bodyStyles: { fontSize: 8 },
@@ -480,6 +567,20 @@ const App = () => {
       theme: "grid",
       headStyles: { fillColor: [15, 23, 42], textColor: 255, fontStyle: "bold" },
     });
+    doc.addPage("a4", "landscape");
+    doc.setFontSize(18);
+    doc.text("Balanco de banco de horas", margin, 18);
+    autoTable(doc, {
+      startY: 26,
+      margin: { left: margin, right: margin },
+      head: [["Servidor", "Horas confirmadas", "Plantoes pendentes"]],
+      body: servidores.map((servidor) => {
+        const stat = bancoHorasStats[servidor.nome] || { minutosConfirmados: 0, plantoesPendentes: 0 };
+        return [servidor.nome, formatMinutesAsHours(stat.minutosConfirmados), String(stat.plantoesPendentes)];
+      }),
+      theme: "grid",
+      headStyles: { fillColor: [180, 83, 9], textColor: 255, fontStyle: "bold" },
+    });
     doc.save("Escala_Plantao_2026_Consolidada.pdf");
   };
 
@@ -493,8 +594,13 @@ const App = () => {
     setServerMessage("");
   };
 
-  const persistSnapshot = async (nextOverrides, nextServers) => {
-    const result = await savePersistedAppState({ overrides: nextOverrides, servers: nextServers });
+  const resetRuleForm = () => {
+    setRuleForm(createRuleForm());
+    setRuleMessage("");
+  };
+
+  const persistSnapshot = async (nextOverrides, nextServers, nextCompensationRules = compensationRulesRef.current) => {
+    const result = await savePersistedAppState({ overrides: nextOverrides, servers: nextServers, compensationRules: nextCompensationRules });
     if (result.remoteConfigured) {
       setPersistenceMessage(
         result.remoteSaved
@@ -668,6 +774,43 @@ const App = () => {
     setServerMessage("Servidor removido com sucesso.");
   };
 
+  const saveCompensationRule = async () => {
+    if (!canEdit) return setRuleMessage("Faça login de administrador para salvar regimes.");
+    const now = new Date().toISOString();
+    const existing = ruleForm.id ? compensationRulesRef.current.find((rule) => rule.id === ruleForm.id) : null;
+    const payload = normalizeCompensationRule({
+      ...ruleForm,
+      id: existing?.id ?? createId(),
+      created_at: existing?.created_at ?? now,
+      updated_at: now,
+    });
+    const validationError = validateCompensationRules(payload, compensationRulesRef.current);
+    if (validationError) return setRuleMessage(validationError);
+
+    const nextRules = [...compensationRulesRef.current.filter((rule) => rule.id !== payload.id), payload]
+      .sort((a, b) => a.start_date.localeCompare(b.start_date));
+    setCompensationRules(nextRules);
+    compensationRulesRef.current = nextRules;
+    await persistSnapshot(overridesRef.current, serverRowsRef.current, nextRules);
+    resetRuleForm();
+    setRuleMessage("Regime salvo com sucesso.");
+  };
+
+  const editCompensationRule = (rule) => {
+    setRuleForm({ ...rule });
+    setRuleMessage("");
+  };
+
+  const deleteCompensationRule = async (rule) => {
+    if (!canEdit || !window.confirm(`Excluir o regime "${rule.label}"?`)) return;
+    const nextRules = compensationRulesRef.current.filter((item) => item.id !== rule.id);
+    setCompensationRules(nextRules);
+    compensationRulesRef.current = nextRules;
+    await persistSnapshot(overridesRef.current, serverRowsRef.current, nextRules);
+    if (ruleForm.id === rule.id) resetRuleForm();
+    setRuleMessage("Regime excluido. O periodo voltou a usar pontos e remuneracao.");
+  };
+
   const saveOverride = async () => {
     if (!canEdit) {
       return setFormMessage("Faça login de administrador para salvar alteracoes.");
@@ -678,6 +821,35 @@ const App = () => {
 
     const now = new Date().toISOString();
     const existing = formState.id ? overridesRef.current.find((item) => item.id === formState.id) : null;
+    let reportedMinutes = 0;
+    let creditedMinutes = 0;
+    let confirmedAt = null;
+    if (formUsesBancoHoras) {
+      if (formState.compensation_confirmed && formState.date >= formatLocalDateIso()) {
+        return setFormMessage("A compensacao so pode ser confirmada depois da data do plantao.");
+      }
+      if (formState.compensation_confirmed && !formState.compensation_mode) {
+        return setFormMessage("Selecione a modalidade de banco de horas.");
+      }
+      reportedMinutes = parseHoursToMinutes(formState.reported_time);
+      if (formState.compensation_confirmed && (!reportedMinutes || reportedMinutes <= 0)) {
+        return setFormMessage("Informe a duracao apurada no formato HH:MM.");
+      }
+      reportedMinutes = reportedMinutes || 0;
+      const keepsConfirmedCalculation =
+        Boolean(existing?.compensation_confirmed_at) &&
+        existing.compensation_mode === formState.compensation_mode &&
+        Number(existing.reported_minutes) === reportedMinutes;
+      creditedMinutes = formState.compensation_confirmed
+        ? keepsConfirmedCalculation
+          ? Number(existing.credited_minutes) || 0
+          : calculateCreditedMinutes(formState.compensation_mode, reportedMinutes)
+        : 0;
+      confirmedAt = formState.compensation_confirmed
+        ? existing?.compensation_confirmed_at ?? new Date().toISOString()
+        : null;
+    }
+
     const payload = normalizeOverrideRecord({
       id: existing?.id ?? formState.id ?? createId(),
       date: formState.date,
@@ -687,6 +859,10 @@ const App = () => {
       desc: formState.desc.trim(),
       tipo: formState.tipo,
       notes: formState.notes.trim(),
+      compensation_mode: formUsesBancoHoras ? formState.compensation_mode : null,
+      reported_minutes: reportedMinutes,
+      credited_minutes: creditedMinutes,
+      compensation_confirmed_at: confirmedAt,
       created_at: existing?.created_at ?? now,
       updated_at: now,
     });
@@ -770,6 +946,9 @@ const App = () => {
       desc: plantao.desc,
       tipo: plantao.tipo,
       notes: plantao.notes || "",
+      compensation_mode: plantao.modalidadeCompensacao || null,
+      reported_time: plantao.minutosApurados ? formatMinutesAsHours(plantao.minutosApurados) : "",
+      compensation_confirmed: Boolean(plantao.compensacaoConfirmadaEm),
     });
     setFormMessage("");
   };
@@ -800,7 +979,7 @@ const App = () => {
         </div>
 
         <div className="space-y-6">
-          {activeTab === "escala" && <TabEscala servidores={servidores} servidorSelecionado={servidorSelecionado} setServidorSelecionado={setServidorSelecionado} mesAtivo={mesAtivo} setMesAtivo={setMesAtivo} plantoesFiltrados={plantoesFiltrados} statsGlobais={statsGlobais} />}
+          {activeTab === "escala" && <TabEscala servidores={servidores} servidorSelecionado={servidorSelecionado} setServidorSelecionado={setServidorSelecionado} mesAtivo={mesAtivo} setMesAtivo={setMesAtivo} plantoesFiltrados={plantoesFiltrados} statsGlobais={statsGlobais} bancoHorasStats={bancoHorasStats} />}
           {activeTab === "ferias" && <TabFerias servidores={servidores} />}
           {activeTab === "feriados" && <TabFeriados />}
           {activeTab === "admin" && (
@@ -808,7 +987,7 @@ const App = () => {
               <div className="bg-white rounded-3xl border border-slate-200 p-5 shadow-sm flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
                 <div>
                   <p className="text-[11px] font-black uppercase tracking-[0.2em] text-indigo-600">Painel administrativo local</p>
-	                  <h2 className="text-2xl font-black text-slate-800">{adminSection === "schedule" ? "Edicao da escala" : adminSection === "servers" ? "Cadastro de servidores" : adminSection === "draw" ? "Ferramenta de sorteio" : "Teste de banco de dados"}</h2>
+	                  <h2 className="text-2xl font-black text-slate-800">{adminSection === "schedule" ? "Edicao da escala" : adminSection === "compensation" ? "Regimes de compensacao" : adminSection === "servers" ? "Cadastro de servidores" : adminSection === "draw" ? "Ferramenta de sorteio" : "Teste de banco de dados"}</h2>
                   <p className="text-sm text-slate-500">{canEdit ? `Autenticado como ${adminUser?.email || "administrador"}.` : "Acesso restrito. Faça login para editar."}</p>
                 </div>
                 <div className="flex gap-2 flex-wrap">
@@ -819,6 +998,9 @@ const App = () => {
                   )}
                   <button disabled={!canEdit} onClick={() => setAdminSection("schedule")} className={`rounded-2xl px-4 py-3 text-sm font-bold flex items-center gap-2 ${adminSection === "schedule" ? "bg-indigo-600 text-white" : "border border-slate-200 text-slate-600 hover:bg-slate-50"} ${!canEdit ? "opacity-50 cursor-not-allowed hover:bg-transparent" : ""}`}>
                     <Calendar size={16} /> Escala
+                  </button>
+                  <button disabled={!canEdit} onClick={() => setAdminSection("compensation")} className={`rounded-2xl px-4 py-3 text-sm font-bold flex items-center gap-2 ${adminSection === "compensation" ? "bg-amber-600 text-white" : "border border-slate-200 text-slate-600 hover:bg-slate-50"} ${!canEdit ? "opacity-50 cursor-not-allowed hover:bg-transparent" : ""}`}>
+                    <CalendarClock size={16} /> Regimes
                   </button>
                   <button disabled={!canEdit} onClick={() => setAdminSection("servers")} className={`rounded-2xl px-4 py-3 text-sm font-bold flex items-center gap-2 ${adminSection === "servers" ? "bg-emerald-600 text-white" : "border border-slate-200 text-slate-600 hover:bg-slate-50"} ${!canEdit ? "opacity-50 cursor-not-allowed hover:bg-transparent" : ""}`}>
                     <Users size={16} /> Servidores
@@ -954,6 +1136,54 @@ const App = () => {
                           <input className="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-indigo-500" value={formState.desc} onChange={(event) => setFormState((current) => ({ ...current, desc: event.target.value }))} placeholder="Ex.: Domingo, Tiradentes, Sabado" />
                         </label>
                       </div>
+                      {formUsesBancoHoras && (
+                        <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 space-y-4">
+                          <div>
+                            <p className="text-sm font-black text-amber-900">Regime de banco de horas</p>
+                            <p className="text-xs text-amber-800">Este plantao gera zero pontos e zero remuneracao.</p>
+                          </div>
+                          <div className="grid gap-4 md:grid-cols-2">
+                            <label className="text-sm font-semibold text-slate-700">
+                              Modalidade
+                              <select
+                                className="mt-2 w-full rounded-2xl border border-amber-200 bg-white px-4 py-3 outline-none focus:border-amber-500"
+                                value={formState.compensation_mode || ""}
+                                onChange={(event) => setFormState((current) => ({
+                                  ...current,
+                                  compensation_mode: event.target.value || null,
+                                  reported_time: event.target.value === MODALIDADE_SOBREAVISO_TERCO && !current.reported_time ? "24:00" : current.reported_time,
+                                }))}
+                              >
+                                <option value="">Selecione</option>
+                                <option value={MODALIDADE_TRABALHO_100}>Trabalho com adicional de 100%</option>
+                                <option value={MODALIDADE_SOBREAVISO_TERCO}>Sobreaviso de 1/3</option>
+                              </select>
+                            </label>
+                            <label className="text-sm font-semibold text-slate-700">
+                              Duracao apurada (HH:MM)
+                              <input className="mt-2 w-full rounded-2xl border border-amber-200 bg-white px-4 py-3 outline-none focus:border-amber-500" value={formState.reported_time} onChange={(event) => setFormState((current) => ({ ...current, reported_time: event.target.value }))} placeholder="05:00 ou 24:00" />
+                            </label>
+                          </div>
+                          <label className={`flex items-start gap-3 rounded-xl bg-white p-3 text-sm font-semibold ${formState.date >= formatLocalDateIso() ? "cursor-not-allowed opacity-60" : "cursor-pointer"}`}>
+                            <input
+                              type="checkbox"
+                              className="mt-1"
+                              checked={formState.compensation_confirmed}
+                              disabled={formState.date >= formatLocalDateIso()}
+                              onChange={(event) => setFormState((current) => ({ ...current, compensation_confirmed: event.target.checked }))}
+                            />
+                            <span>
+                              Confirmar apuracao
+                              <span className="block text-xs font-normal text-slate-500">Somente plantao passado pode creditar o banco. O valor confirmado fica congelado no historico.</span>
+                            </span>
+                          </label>
+                          {formState.compensation_confirmed && parseHoursToMinutes(formState.reported_time) > 0 && (
+                            <p className="text-sm font-bold text-emerald-800">
+                              Credito calculado: {formatMinutesAsHours(calculateCreditedMinutes(formState.compensation_mode, parseHoursToMinutes(formState.reported_time)))}
+                            </p>
+                          )}
+                        </div>
+                      )}
                       <label className="text-sm font-semibold text-slate-600 block">
                         Observacao
                         <textarea className="mt-2 min-h-[120px] w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-indigo-500" value={formState.notes} onChange={(event) => setFormState((current) => ({ ...current, notes: event.target.value }))} placeholder="Descreva o motivo da alteracao manual." />
@@ -978,6 +1208,19 @@ const App = () => {
                     </div>
                   </div>
                 </div>
+              )}
+
+              {canEdit && adminSection === "compensation" && (
+                <AdminCompensationRulesPanel
+                  rules={compensationRules}
+                  form={ruleForm}
+                  setForm={setRuleForm}
+                  message={ruleMessage}
+                  saveRule={saveCompensationRule}
+                  editRule={editCompensationRule}
+                  deleteRule={deleteCompensationRule}
+                  resetForm={resetRuleForm}
+                />
               )}
 
 	              {canEdit && adminSection === "servers" && (

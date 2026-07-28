@@ -92,7 +92,8 @@ npm run build
 
 ## Persistencia
 
-- `servers` e `overrides` sao salvos no `localStorage` e, quando o Supabase esta configurado, sincronizados com a tabela `public.escala_app_state`.
+- `servers`, `overrides` e `compensationRules` sao salvos no `localStorage` e, quando o Supabase esta configurado, sincronizados com a tabela `public.escala_app_state`.
+- Regimes de compensacao usam periodos configuraveis no payload JSON; por isso, nao exigem uma nova migracao SQL.
 - A sincronizacao usa sempre a linha `current`.
 - Se o Supabase nao estiver disponivel, o app continua operando localmente.
 

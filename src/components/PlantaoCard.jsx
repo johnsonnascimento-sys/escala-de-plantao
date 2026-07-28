@@ -1,8 +1,10 @@
 import { AlertCircle, Shield, User } from "lucide-react";
 import { SERVIDOR_A_DEFINIR } from "../data/scheduleData";
+import { formatMinutesAsHours, getCompensationModeLabel, REGIME_BANCO_HORAS } from "../lib/compensation.js";
 
 const PlantaoCard = ({ plantao, servidorSelecionado = "Todos", onEdit }) => {
   const isPendente = plantao.servidor === SERVIDOR_A_DEFINIR;
+  const isBancoHoras = plantao.regimeCompensacao === REGIME_BANCO_HORAS;
 
   return (
   <div className={`bg-white rounded-2xl p-5 border flex items-center gap-6 group transition-colors ${isPendente ? "border-amber-300 hover:border-amber-400" : "border-slate-200 hover:border-indigo-300"}`}>
@@ -28,7 +30,16 @@ const PlantaoCard = ({ plantao, servidorSelecionado = "Todos", onEdit }) => {
           {plantao.notes && <p className={`text-[10px] mt-1 ${isPendente ? "text-amber-700" : "text-emerald-700"}`}>{plantao.notes}</p>}
         </div>
         <div className="text-right">
-          <span className="block text-xs font-bold text-slate-500">{plantao.pontos} pts</span>
+          {isBancoHoras ? (
+            <>
+              <span className={`block text-xs font-bold ${plantao.compensacaoConfirmadaEm ? "text-emerald-700" : "text-amber-700"}`}>
+                {plantao.compensacaoConfirmadaEm ? `${formatMinutesAsHours(plantao.minutosCreditados)} creditadas` : "Banco de horas pendente"}
+              </span>
+              <span className="block text-[9px] font-bold text-slate-400">{getCompensationModeLabel(plantao.modalidadeCompensacao)}</span>
+            </>
+          ) : (
+            <span className="block text-xs font-bold text-slate-500">{plantao.pontos} pts</span>
+          )}
           {plantao.origem !== "base" && (
             <span className="text-[10px] uppercase font-bold text-indigo-600">{plantao.origem === "manual" ? "Novo" : "Editado"}</span>
           )}

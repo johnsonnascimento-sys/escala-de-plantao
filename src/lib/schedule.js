@@ -6,6 +6,7 @@ import {
   VALOR_DOM_FERIADO,
   VALOR_SABADO,
 } from "../data/scheduleData.js";
+import { decorateShiftCompensation, getCompensationRegime, REGIME_BANCO_HORAS } from "./compensation.js";
 
 export const parseDate = (dateStr) => {
   const [y, m, d] = dateStr.split("-").map(Number);
@@ -27,11 +28,12 @@ export const normalizeText = (value) =>
     .replace(/[\u0300-\u036f]/g, "")
     .trim();
 
-export const getPlantaoMeta = (tipo) => {
+export const getPlantaoMeta = (tipo, date = "", compensationRules = []) => {
   const isSabado = tipo === "SAB";
+  const isBancoHoras = date && getCompensationRegime(date, compensationRules) === REGIME_BANCO_HORAS;
   return {
-    pontos: isSabado ? PTS_SABADO : PTS_DOM_FERIADO,
-    valor: isSabado ? VALOR_SABADO : VALOR_DOM_FERIADO,
+    pontos: isBancoHoras ? 0 : isSabado ? PTS_SABADO : PTS_DOM_FERIADO,
+    valor: isBancoHoras ? 0 : isSabado ? VALOR_SABADO : VALOR_DOM_FERIADO,
   };
 };
 
@@ -62,14 +64,14 @@ export const getDisponibilidadeMensagem = (servidores, nome, data) => {
   return null;
 };
 
-export const buildBaseSchedule = (plantoesBase, servidores) => {
+export const buildBaseSchedule = (plantoesBase, servidores, compensationRules = []) => {
   const saldoPontos = servidores.reduce((acc, servidor) => {
     acc[servidor.nome] = 0;
     return acc;
   }, {});
 
   return plantoesBase.map((plantao) => {
-    const { pontos, valor } = getPlantaoMeta(plantao.tipo);
+    const { pontos, valor } = getPlantaoMeta(plantao.tipo, plantao.data, compensationRules);
     let servidorEscolhido = plantao.fixo || null;
     let notes = "";
 
@@ -103,18 +105,18 @@ export const buildBaseSchedule = (plantoesBase, servidores) => {
       saldoPontos[servidorEscolhido] += pontos;
     }
 
-    return {
+    return decorateShiftCompensation({
       ...plantao,
       servidor: servidorEscolhido,
       pontos,
       valor,
       origem: "base",
       notes,
-    };
+    }, compensationRules);
   });
 };
 
-export const applyOverrides = (baseSchedule, overrides) => {
+export const applyOverrides = (baseSchedule, overrides, compensationRules = []) => {
   const replacedDates = new Set();
   const overridesOrdenados = [...overrides].sort((a, b) => {
     if (a.date === b.date) return new Date(a.updated_at || a.created_at || 0) - new Date(b.updated_at || b.created_at || 0);
@@ -134,10 +136,14 @@ export const applyOverrides = (baseSchedule, overrides) => {
           servidor: override.server_name || normalizedBase[idx].servidor,
           desc: override.desc || normalizedBase[idx].desc,
           tipo: override.tipo || normalizedBase[idx].tipo,
-          ...getPlantaoMeta(override.tipo || normalizedBase[idx].tipo),
+          ...getPlantaoMeta(override.tipo || normalizedBase[idx].tipo, override.date, compensationRules),
           origem: "override",
           notes: override.notes || "",
           overrideId: override.id,
+          modalidadeCompensacao: override.compensation_mode ?? null,
+          minutosApurados: override.reported_minutes ?? 0,
+          minutosCreditados: override.credited_minutes ?? 0,
+          compensacaoConfirmadaEm: override.compensation_confirmed_at ?? null,
         };
         replacedDates.add(override.date);
       }
@@ -151,15 +157,19 @@ export const applyOverrides = (baseSchedule, overrides) => {
         servidor: override.server_name,
         desc: override.desc,
         tipo: override.tipo,
-        ...getPlantaoMeta(override.tipo),
+        ...getPlantaoMeta(override.tipo, override.date, compensationRules),
         origem: "manual",
         notes: override.notes || "",
         overrideId: override.id,
+        modalidadeCompensacao: override.compensation_mode ?? null,
+        minutosApurados: override.reported_minutes ?? 0,
+        minutosCreditados: override.credited_minutes ?? 0,
+        compensacaoConfirmadaEm: override.compensation_confirmed_at ?? null,
       });
     }
   });
 
-  return [...normalizedBase, ...createdEntries].sort((a, b) => {
+  return [...normalizedBase, ...createdEntries].map((shift) => decorateShiftCompensation(shift, compensationRules)).sort((a, b) => {
     if (a.data === b.data) {
       if (a.origem === "manual" && b.origem !== "manual") return 1;
       if (a.origem !== "manual" && b.origem === "manual") return -1;
