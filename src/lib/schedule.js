@@ -5,7 +5,7 @@ import {
   SERVIDOR_A_DEFINIR,
   VALOR_DOM_FERIADO,
   VALOR_SABADO,
-} from "../data/scheduleData";
+} from "../data/scheduleData.js";
 
 export const parseDate = (dateStr) => {
   const [y, m, d] = dateStr.split("-").map(Number);
@@ -13,6 +13,13 @@ export const parseDate = (dateStr) => {
 };
 
 export const formatDateBr = (dateStr) => dateStr.split("-").reverse().join("/");
+
+export const formatLocalDateIso = (date = new Date()) => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
 
 export const normalizeText = (value) =>
   (value || "")
@@ -162,17 +169,31 @@ export const applyOverrides = (baseSchedule, overrides) => {
   });
 };
 
-export const getStatsGlobais = (escala) =>
+const createEmptyStats = () => ({
+  realizados: { dias: 0, pontos: 0, valor: 0 },
+  previstoAnual: { dias: 0, pontos: 0, valor: 0 },
+});
+
+export const getStatsGlobais = (escala, dataReferencia = formatLocalDateIso()) =>
   escala.reduce((acc, plantao) => {
     if (plantao.servidor === SERVIDOR_A_DEFINIR || plantao.servidor === "Nenhum Disponivel") {
       return acc;
     }
     if (!acc[plantao.servidor]) {
-      acc[plantao.servidor] = { dias: 0, pontos: 0, valor: 0 };
+      acc[plantao.servidor] = createEmptyStats();
     }
-    acc[plantao.servidor].dias += 1;
-    acc[plantao.servidor].pontos += plantao.pontos;
-    acc[plantao.servidor].valor += plantao.valor;
+
+    const stat = acc[plantao.servidor];
+    stat.previstoAnual.dias += 1;
+    stat.previstoAnual.pontos += plantao.pontos;
+    stat.previstoAnual.valor += plantao.valor;
+
+    if (plantao.data < dataReferencia) {
+      stat.realizados.dias += 1;
+      stat.realizados.pontos += plantao.pontos;
+      stat.realizados.valor += plantao.valor;
+    }
+
     return acc;
   }, {});
 

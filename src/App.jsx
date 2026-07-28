@@ -82,8 +82,18 @@ const createEmptyForm = () => ({
 
 const createServerForm = () => serverToFormState();
 
-const TabEscala = ({ servidores, servidorSelecionado, setServidorSelecionado, mesAtivo, setMesAtivo, plantoesFiltrados, statsGlobais }) => (
-  <div className="space-y-6">
+const emptyStats = () => ({
+  realizados: { dias: 0, pontos: 0, valor: 0 },
+  previstoAnual: { dias: 0, pontos: 0, valor: 0 },
+});
+
+const TabEscala = ({ servidores, servidorSelecionado, setServidorSelecionado, mesAtivo, setMesAtivo, plantoesFiltrados, statsGlobais }) => {
+  const maxPontosPrevistos = Math.max(
+    ...servidores.map((servidor) => statsGlobais[servidor.nome]?.previstoAnual.pontos || 0),
+    1,
+  );
+
+  return <div className="space-y-6">
     <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white p-4 rounded-2xl shadow-sm border border-slate-100">
       <div className="flex items-center gap-2 text-slate-400 overflow-x-auto w-full no-scrollbar pb-2 md:pb-0">
         <Filter size={16} />
@@ -120,19 +130,31 @@ const TabEscala = ({ servidores, servidorSelecionado, setServidorSelecionado, me
 
       <div className="space-y-6">
         <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
-          <h3 className="font-bold text-slate-800 mb-4 flex items-center gap-2 text-xs uppercase tracking-widest border-b pb-4"><Coins size={16} className="text-amber-500" /> Balanco geral</h3>
+          <div className="mb-4 border-b pb-4">
+            <h3 className="font-bold text-slate-800 flex items-center gap-2 text-xs uppercase tracking-widest"><Coins size={16} className="text-amber-500" /> Balanco geral</h3>
+            <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-[9px] font-bold uppercase tracking-wide text-slate-500">
+              <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-indigo-600" /> Realizados</span>
+              <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-indigo-200" /> Previsao anual</span>
+            </div>
+          </div>
           <div className="space-y-4">
             {servidores.map((servidor) => {
-              const data = statsGlobais[servidor.nome] || { dias: 0, pontos: 0 };
-              const max = Math.max(...Object.values(statsGlobais).map((stat) => stat.pontos), 1);
+              const data = statsGlobais[servidor.nome] || emptyStats();
+              const realizados = data.realizados.pontos;
+              const previstos = data.previstoAnual.pontos;
               return (
                 <div key={servidor.nome} className="cursor-pointer" onClick={() => setServidorSelecionado(servidor.nome)}>
-                  <div className="flex justify-between text-[10px] mb-1.5 font-bold text-slate-600 px-1">
+                  <div className="flex flex-wrap justify-between gap-x-3 gap-y-1 text-[10px] mb-1.5 font-bold text-slate-600 px-1">
                     <span>{servidor.nome}</span>
-                    <span className="text-indigo-600">{data.pontos} pts</span>
+                    <span className="text-right">
+                      <span className="text-indigo-700">{realizados} realizados</span>
+                      <span className="text-slate-400"> · </span>
+                      <span className="text-indigo-400">{previstos} previstos no ano</span>
+                    </span>
                   </div>
-                  <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                    <div className="h-full bg-indigo-500" style={{ width: `${(data.pontos / max) * 100}%` }} />
+                  <div className="relative h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                    <div className="absolute inset-y-0 left-0 bg-indigo-200" style={{ width: `${(previstos / maxPontosPrevistos) * 100}%` }} />
+                    <div className="absolute inset-y-0 left-0 bg-indigo-600" style={{ width: `${(realizados / maxPontosPrevistos) * 100}%` }} />
                   </div>
                 </div>
               );
@@ -148,8 +170,8 @@ const TabEscala = ({ servidores, servidorSelecionado, setServidorSelecionado, me
         </div>
       </div>
     </div>
-  </div>
-);
+  </div>;
+};
 
 const TabFerias = ({ servidores }) => (
   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -436,16 +458,24 @@ const App = () => {
         bodyStyles: { fontSize: 8 },
       });
     }
-    doc.addPage();
+    doc.addPage("a4", "landscape");
     doc.setFontSize(18);
-    doc.text("Balanco geral consolidado", margin, 18);
+    doc.text("Balanco geral: realizados e previsao anual", margin, 18);
     autoTable(doc, {
       startY: 26,
       margin: { left: margin, right: margin },
-      head: [["Servidor", "Dias", "Pontos", "Valor"]],
+      head: [["Servidor", "Plantoes realizados", "Pts realizados", "Valor realizado", "Plantoes previstos no ano", "Pts previstos no ano", "Valor previsto no ano"]],
       body: servidores.map((servidor) => {
-        const stat = statsGlobais[servidor.nome] || { dias: 0, pontos: 0, valor: 0 };
-        return [servidor.nome, String(stat.dias), String(stat.pontos), stat.valor.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })];
+        const stat = statsGlobais[servidor.nome] || emptyStats();
+        return [
+          servidor.nome,
+          String(stat.realizados.dias),
+          String(stat.realizados.pontos),
+          stat.realizados.valor.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }),
+          String(stat.previstoAnual.dias),
+          String(stat.previstoAnual.pontos),
+          stat.previstoAnual.valor.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }),
+        ];
       }),
       theme: "grid",
       headStyles: { fillColor: [15, 23, 42], textColor: 255, fontStyle: "bold" },
