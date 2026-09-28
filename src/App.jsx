@@ -386,7 +386,15 @@ const App = () => {
       ? `Persistencia remota ativa. Ultima sincronizacao em ${new Date(persisted.remoteUpdatedAt).toLocaleString("pt-BR")}.`
       : "Persistencia remota ativa e sincronizada.";
 
-    if (persisted.source === "remote" || persisted.syncStatus === "resynced_local") {
+    if (persisted.remoteConfigured && persisted.syncStatus === "conflict") {
+      setOverrides(nextOverrides);
+      setServerRows(nextServers);
+      setCompensationRules(nextCompensationRules);
+      overridesRef.current = nextOverrides;
+      serverRowsRef.current = nextServers;
+      compensationRulesRef.current = nextCompensationRules;
+      setPersistenceMessage(`Conflito de sincronizacao: ${persisted.remoteError || "a escala remota mudou antes da gravacao. Nenhum dado foi sobrescrito."}`);
+    } else if (persisted.source === "remote" || persisted.syncStatus === "resynced_local") {
       setOverrides(nextOverrides);
       setServerRows(nextServers);
       setCompensationRules(nextCompensationRules);
@@ -616,7 +624,9 @@ const App = () => {
       setPersistenceMessage(
         result.remoteSaved
           ? "Salvo localmente e sincronizado com o banco remoto."
-          : `Salvo localmente. A sincronizacao remota ficou pendente e sera refeita quando o banco voltar. ${result.remoteError || ""}`.trim(),
+          : result.remoteConflict
+            ? "Conflito de sincronizacao: a escala foi alterada em outra sessao. Nenhum dado remoto foi sobrescrito."
+            : `Salvo localmente. A sincronizacao remota ficou pendente e sera refeita quando o banco voltar. ${result.remoteError || ""}`.trim(),
       );
     } else {
       setPersistenceMessage("Persistido somente neste navegador.");
@@ -888,7 +898,14 @@ const App = () => {
       });
     })();
     setOverrides(nextOverrides);
-    await persistSnapshot(nextOverrides, serverRowsRef.current);
+    const persistenceResult = await persistSnapshot(nextOverrides, serverRowsRef.current);
+    if (persistenceResult.remoteConfigured && !persistenceResult.remoteSaved) {
+      return setFormMessage(
+        persistenceResult.remoteConflict
+          ? "A alteracao nao foi gravada no banco porque outra sessao atualizou a escala. Recarregue a pagina antes de tentar novamente."
+          : `A alteracao foi mantida apenas neste navegador e ainda nao foi confirmada no banco. ${persistenceResult.remoteError || ""}`.trim(),
+      );
+    }
     setFormState(createEmptyForm());
     setFormMessage("Override salvo com sucesso.");
   };

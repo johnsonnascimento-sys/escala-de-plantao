@@ -57,18 +57,10 @@ const parseTimestamp = (value) => {
   return Number.isNaN(parsed) ? null : parsed;
 };
 
-const isTimestampNewer = (candidate, baseline) => {
-  const candidateMs = parseTimestamp(candidate);
-  if (candidateMs === null) {
-    return false;
-  }
-
-  const baselineMs = parseTimestamp(baseline);
-  if (baselineMs === null) {
-    return true;
-  }
-
-  return candidateMs > baselineMs;
+const isSameTimestamp = (left, right) => {
+  const leftMs = parseTimestamp(left);
+  const rightMs = parseTimestamp(right);
+  return leftMs !== null && rightMs !== null && leftMs === rightMs;
 };
 
 const hasPersistedState = (state) =>
@@ -205,7 +197,7 @@ const writePersistedSnapshotLocally = ({ overrides = [], servers = [], compensat
   writeLocalAppMeta(meta);
 };
 
-const syncLocalStateToRemote = async (client, state, localMeta) => {
+const syncLocalStateToRemote = async (client, state, localMeta, { expectedRemoteUpdatedAt = null, allowInsert = false } = {}) => {
   const syncedAt = new Date().toISOString();
   const payload = {
     overrides: state.overrides,
@@ -213,37 +205,71 @@ const syncLocalStateToRemote = async (client, state, localMeta) => {
     compensationRules: state.compensationRules,
   };
 
-  const { error } = await client
-    .from(SUPABASE_TABLE)
-    .upsert(
-      {
-        id: SUPABASE_ROW_ID,
-        payload,
-        updated_at: syncedAt,
-      },
-      { onConflict: "id" },
-    );
+  const record = {
+    id: SUPABASE_ROW_ID,
+    payload,
+    updated_at: syncedAt,
+  };
+
+  let data = null;
+  let error = null;
+
+  if (expectedRemoteUpdatedAt) {
+    ({ data, error } = await client
+      .from(SUPABASE_TABLE)
+      .update({ payload, updated_at: syncedAt })
+      .eq("id", SUPABASE_ROW_ID)
+      .eq("updated_at", expectedRemoteUpdatedAt)
+      .select("updated_at")
+      .maybeSingle());
+  } else if (allowInsert) {
+    ({ data, error } = await client
+      .from(SUPABASE_TABLE)
+      .insert(record)
+      .select("updated_at")
+      .maybeSingle());
+  } else {
+    return {
+      remoteSaved: false,
+      remoteConflict: true,
+      remoteError: "Nao foi possivel confirmar a versao atual da escala no banco.",
+      remoteSyncedAt: null,
+    };
+  }
 
   if (error) {
     return {
       remoteSaved: false,
+      remoteConflict: error.code === "23505",
       remoteError: error.message,
       remoteSyncedAt: null,
     };
   }
 
+  if (!data?.updated_at) {
+    return {
+      remoteSaved: false,
+      remoteConflict: true,
+      remoteError: "A escala foi alterada em outra sessao antes desta gravacao. Nenhum dado local foi sobrescrito.",
+      remoteSyncedAt: null,
+    };
+  }
+
+  const remoteSyncedAt = data.updated_at;
+
   writePersistedSnapshotLocally(state, {
     ...localMeta,
     lastRemoteSyncAt: syncedAt,
-    lastRemoteSeenAt: syncedAt,
+    lastRemoteSeenAt: remoteSyncedAt,
     pendingRemoteSync: false,
     lastSyncErrorAt: null,
   });
 
   return {
     remoteSaved: true,
+    remoteConflict: false,
     remoteError: null,
-    remoteSyncedAt: syncedAt,
+    remoteSyncedAt,
   };
 };
 
@@ -281,8 +307,8 @@ export const loadPersistedAppState = async () => {
     }
 
     if (!data?.payload || typeof data.payload !== "object") {
-      if (hasPersistedState(localState)) {
-        const syncResult = await syncLocalStateToRemote(client, localState, localMeta);
+      if (localMeta.pendingRemoteSync && hasPersistedState(localState)) {
+        const syncResult = await syncLocalStateToRemote(client, localState, localMeta, { allowInsert: true });
         if (syncResult.remoteSaved) {
           return {
             source: "local",
@@ -299,7 +325,7 @@ export const loadPersistedAppState = async () => {
         return {
           source: "local",
           remoteConfigured: true,
-          syncStatus: "pending_remote_sync",
+          syncStatus: syncResult.remoteConflict ? "conflict" : "pending_remote_sync",
           remoteError: syncResult.remoteError,
           localMeta,
           overrides: localState.overrides,
@@ -322,11 +348,29 @@ export const loadPersistedAppState = async () => {
     const nextState = normalizePersistedPayload(data.payload);
     const remoteUpdatedAt = data.updated_at ?? null;
 
-    if (
-      hasPersistedState(localState) &&
-      (!hasPersistedState(nextState) || localMeta.pendingRemoteSync || isTimestampNewer(localMeta.lastLocalSaveAt, remoteUpdatedAt))
-    ) {
-      const syncResult = await syncLocalStateToRemote(client, localState, localMeta);
+    if (localMeta.pendingRemoteSync) {
+      if (!isSameTimestamp(localMeta.lastRemoteSeenAt, remoteUpdatedAt)) {
+        writePersistedSnapshotLocally(nextState, {
+          ...localMeta,
+          lastRemoteSeenAt: remoteUpdatedAt,
+          lastRemoteSyncAt: remoteUpdatedAt,
+          pendingRemoteSync: false,
+          lastSyncErrorAt: new Date().toISOString(),
+        });
+        return {
+          source: "remote",
+          remoteConfigured: true,
+          syncStatus: "conflict",
+          remoteUpdatedAt,
+          remoteError: "A escala foi alterada em outra sessao. O banco foi mantido e a alteracao local nao confirmada foi descartada.",
+          localMeta: readLocalAppMeta(),
+          overrides: nextState.overrides,
+          servers: nextState.servers,
+          compensationRules: nextState.compensationRules,
+        };
+      }
+
+      const syncResult = await syncLocalStateToRemote(client, localState, localMeta, { expectedRemoteUpdatedAt: remoteUpdatedAt });
 
       if (syncResult.remoteSaved) {
         return {
@@ -344,7 +388,7 @@ export const loadPersistedAppState = async () => {
       return {
         source: "local",
         remoteConfigured: true,
-        syncStatus: "pending_remote_sync",
+        syncStatus: syncResult.remoteConflict ? "conflict" : "pending_remote_sync",
         remoteUpdatedAt,
         remoteError: syncResult.remoteError,
         localMeta,
@@ -389,7 +433,7 @@ export const loadPersistedAppState = async () => {
 };
 
 export const savePersistedAppState = async ({ overrides = [], servers = [], compensationRules = [] }) => {
-  const localMeta = {
+  let localMeta = {
     ...readLocalAppMeta(),
     lastLocalSaveAt: new Date().toISOString(),
     pendingRemoteSync: true,
@@ -407,7 +451,30 @@ export const savePersistedAppState = async ({ overrides = [], servers = [], comp
     };
   }
 
-  const syncResult = await syncLocalStateToRemote(client, { overrides, servers, compensationRules }, localMeta);
+  let expectedRemoteUpdatedAt = localMeta.lastRemoteSeenAt;
+  let allowInsert = false;
+
+  if (!expectedRemoteUpdatedAt) {
+    const { data, error } = await client.from(SUPABASE_TABLE).select("updated_at").eq("id", SUPABASE_ROW_ID).maybeSingle();
+    if (error) {
+      return {
+        remoteSaved: false,
+        remoteConfigured: true,
+        remoteError: error.message,
+        localSavedAt: localMeta.lastLocalSaveAt,
+        pendingRemoteSync: true,
+      };
+    }
+
+    expectedRemoteUpdatedAt = data?.updated_at ?? null;
+    allowInsert = !expectedRemoteUpdatedAt;
+    localMeta = { ...localMeta, lastRemoteSeenAt: expectedRemoteUpdatedAt };
+  }
+
+  const syncResult = await syncLocalStateToRemote(client, { overrides, servers, compensationRules }, localMeta, {
+    expectedRemoteUpdatedAt,
+    allowInsert,
+  });
 
   if (!syncResult.remoteSaved) {
     writeLocalAppMeta({
@@ -420,6 +487,7 @@ export const savePersistedAppState = async ({ overrides = [], servers = [], comp
   return {
     remoteSaved: syncResult.remoteSaved,
     remoteConfigured: true,
+    remoteConflict: syncResult.remoteConflict,
     remoteError: syncResult.remoteError,
     localSavedAt: localMeta.lastLocalSaveAt,
     remoteSyncedAt: syncResult.remoteSyncedAt,
